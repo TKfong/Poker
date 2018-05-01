@@ -1,5 +1,6 @@
 # By Timothy Fong
 # CMPE 209 Poker Project
+#!/usr/bin/python
 import socket
 from Crypto.PublicKey import RSA
 from Crypto import Random
@@ -8,12 +9,15 @@ import sys
 import threading
 import mysql.connector
 from Crypto.Cipher import AES
+import MySQLdb
 
 encrypt_str = "encrypted_message="
 account_str = "make_account="
 num_clients = 0
 client_public_key = "public_key="
 encrypt_log = "encrypted_login="
+ID = 0
+active = [0, 0, 0, 0, 0]
 
 #Generate private and public keys
 #Keys for making accounts
@@ -44,7 +48,6 @@ class ClientThread(threading.Thread):
 		make_account(self.c, data)
 			
 		#Poker Client 
-		
 		#Check account exists on MySQL database
 		if data == "Poker: GO":
 			#Get public key for making accounts
@@ -55,7 +58,11 @@ class ClientThread(threading.Thread):
 			#Update number of clients
 			global num_clients 
 			num_clients = num_clients + 1
-			print "poker go"
+
+
+			#print "poker go"
+
+
 			#Limit number of clients server can handle to 5 
 			if num_clients > 5:
 				self.c.send("Too many clients")
@@ -79,7 +86,15 @@ class ClientThread(threading.Thread):
 					data = data.replace(client_public_key, '')
 					#Convert to key
 					client_key = RSA.importKey(data)
-					print client_key.exportKey()
+
+
+					#print client_key.exportKey()
+
+
+					# Open database connection
+					db = MySQLdb.connect("localhost","root","root","poker" )
+					# prepare a cursor object using cursor() method
+					cursor = db.cursor()
 				else:
 					print "no public key"
 					#return
@@ -96,18 +111,19 @@ class ClientThread(threading.Thread):
 					#Remove extra characters
 					decrypted = decrypted.replace("\r\n", '') 
 					decrypted = decrypted.replace(encrypt_log, '')
-					print "Received:\nEncrypted message = "+str(data)
-					print "Decrypted message = " + decrypted
+
+
+					#print "Received:\nEncrypted message = "+str(data)
+					#print "Decrypted message = " + decrypted
+
+
 					data = decrypted.split("~!@#$%^&*()")
 					#Obtain username and password
 					user = data[0]
 					pw = data[1]
 					#Check if username and password exist on database
-					cnx = mysql.connector.connect(user='root', password='root', host='127.0.0.1', database='poker')
-					cursor = cnx.cursor(buffered=True)
 					check_stmt = ("SELECT * FROM users WHERE username = %s and password = %s")
 					cursor.execute(check_stmt, (user, pw, ))				
-					cnx.commit()
 					#Check for a row on the database
 					row_count = cursor.rowcount
 					print("number of affected rows: {}".format(row_count))
@@ -118,7 +134,6 @@ class ClientThread(threading.Thread):
 						sys.exit()
 					#Only one copy of the account on the database
 					elif row_count == 1:
-						print "loki dies"
 						#Request for Session Key
 						message = "Request Session Key"
 						encrypted = client_key.encrypt(message, 32)
@@ -131,29 +146,46 @@ class ClientThread(threading.Thread):
 						encrypted = eval(data)
 						decrypted = private_key1.decrypt(encrypted)
 						data = decrypted.split("!@#$%^&*()")
-						key = data[0]
+						sess_key = data[0]
 						IV = data[1]
 						#self.c.send("Server: OK")
-						print "key: " + key
+						print "key: " + sess_key
 						print "IV: " + IV
-						encryptor = AES.new(key, AES.MODE_CBC, IV)
+						#Fill in Database
+						#Add Session key to Database
+						update_stmt = ("UPDATE users SET session_key = %s where username = %s and password = %s")
+						cursor.execute(update_stmt, (sess_key, user, pw, ))
+						db.commit()
+						#Add IV to Database
+						update_stmt = ("UPDATE users SET IV = %s where username = %s and password = %s")
+						cursor.execute(update_stmt, (IV, user, pw, ))
+						db.commit()
+						#Add Player ID
+						global ID
+						ID = ID + 1
+						global active
+						if ID not in active:
+							active[active.index(0)] = ID
+						else:
+							sys.exit()
+						print "ID: " + str(ID)
+						update_stmt = ("UPDATE users SET Player_ID = %s where username = %s and password = %s")
+						cursor.execute(update_stmt, (ID, user, pw, ))
+						db.commit()
+
+						encryptor = AES.new(sess_key, AES.MODE_CBC, IV)
 						text = 'loki dies'
 						if len(text) % 16 != 0:
 							text += '~' * (16 - len(text) % 16)
 						ciphertext = encryptor.encrypt(text)
 						self.c.send(ciphertext)
 
-						#update_stmt = "UPDATE users SET public_key = %s where username = %s and password = %s"
-						#cursor.execute(update_stmt, (data, user, pw, ))
-						#cnx.commit()
-						#print "checking"
 					#Beware if row_count != 1
 					else:
 						print "Multiple copies of account exist"
 						#return
 						sys.exit()
-					cursor.close()
-					cnx.close()
+					db.close()
 					#break
 				#while True:
 				#elif decrypted == "Quit": 
@@ -220,6 +252,11 @@ def make_account(c, data):
 		else:
 			c.send("Ready")
 			print "Number of clients: " + str(num_clients)
+			# Open database connection
+			db = MySQLdb.connect("localhost","root","root","poker" )
+
+			# prepare a cursor object using cursor() method
+			cursor = db.cursor()
 		while True:
 			#Wait until username and password data is received
 			data = c.recv(1024)
@@ -241,16 +278,16 @@ def make_account(c, data):
 				#separate username and password
 				data = decrypted.split("~!@#$%^&*()")
 				#Insert into Mysql database
-				cnx = mysql.connector.connect(user='root', password='root', host='127.0.0.1', database='poker')
-				cursor = cnx.cursor()
+				#cnx = mysql.connector.connect(user='root', password='root', host='127.0.0.1', database='poker')
+				#cursor = cnx.cursor()
 				insert_stmt = ("INSERT INTO users (username, password) VALUES (%s, %s)")
 				cursor.execute(insert_stmt, (data[0], data[1], ))
 				print data[0]
 				print data[1]
 				#End Mysql connection
-				cnx.commit()
-				cursor.close()
-				cnx.close()
+				db.commit()
+				#cursor.close()
+				db.close()
 			#End loop, end thread, and end connection
 			elif decrypted == "Quit": 
 				c.send("Thread closed\n")
