@@ -136,23 +136,33 @@ class ClientThread(threading.Thread):
 					elif row_count == 1:
 						#Request for Session Key
 						message = "Request Session Key"
+						#Encrypt with client public key
 						encrypted = client_key.encrypt(message, 32)
+						#Send to client
 						self.c.send(str(encrypted))
 						print "Getting session key"
+						#Receive Session key
 						data = self.c.recv(1024)
-						#remove new line character
+						#remove extra characters
 						data = data.replace("\r\n", '') 
 						data = data.replace(encrypt_str, '')
+						#Encrypted Session Key; encrypted with server public key
 						encrypted = eval(data)
+						#Decrypt Session key and IV
 						decrypted = private_key1.decrypt(encrypted)
 						data = decrypted.split("!@#$%^&*()")
+						#Session Key and IV
 						sess_key = data[0]
 						IV = data[1]
-						#self.c.send("Server: OK")
+
+
 						print "key: " + sess_key
 						print "IV: " + IV
+
+
 						#Fill in Database
 						#Add Session key to Database
+						#Note any changes to the Database have to finalized with a commit()
 						update_stmt = ("UPDATE users SET session_key = %s where username = %s and password = %s")
 						cursor.execute(update_stmt, (sess_key, user, pw, ))
 						db.commit()
@@ -172,9 +182,10 @@ class ClientThread(threading.Thread):
 						update_stmt = ("UPDATE users SET Player_ID = %s where username = %s and password = %s")
 						cursor.execute(update_stmt, (ID, user, pw, ))
 						db.commit()
-
+						#AES Encryption (Symmetric Encryption)
 						encryptor = AES.new(sess_key, AES.MODE_CBC, IV)
 						text = 'loki dies'
+						#Text send using AES has to be a multiple to 16 so fill extra space with junk character ~
 						if len(text) % 16 != 0:
 							text += '~' * (16 - len(text) % 16)
 						ciphertext = encryptor.encrypt(text)
