@@ -30,35 +30,26 @@ server_string = server_string.replace("\r\n", '')
 #Convert string to key
 server_public_key = RSA.importKey(server_string)
 #print server_public_key.exportKey()
+
 #Generate Client public/private key pair
 random_generator = Random.new().read
 client_private_key = RSA.generate(1024, random_generator)
 client_public_key = client_private_key.publickey()
-print client_public_key.exportKey()
-print "a"
+#print client_public_key.exportKey()
+
 #Server's response if too many clients
 server_response = server.recv(1024)
 server_response = server_response.replace("\r\n", '')
 print "server: " + server_response
+#If Server occupied
 if server_response == "Too many clients":
 	print "Fail: server is currently full"
 	print "Now quiting"
 	server.close()
 	sys.exit()
 	print "b"
-#Otherwise confirm username and password
-#elif server_response == "Start":
-#	print "c"
-#	#Receive request for public key
-#	server_response = server.recv(1024)
-#	server_response = server_response.replace("\r\n", '')
-#	if server_response == "Request Public Key":
-#		server.sendall("public_key=" + client_public_key.exportKey() + "\n")
-#	else:
-#		sys.exit()
-#
-#	print "checking"
 
+#Otherwise, send client's public key for asymmetric encryption
 elif server_response == "Request Public Key":
 	print "c"
 	server.sendall("public_key=" + client_public_key.exportKey() + "\n")
@@ -68,10 +59,14 @@ elif server_response == "Request Public Key":
 	type(username)
 	password = raw_input("Password: ")
 	type(password)
+	message = "encrypted_login=" + username + "~!@#$%^&*()" + password
+
+	#hashing, maybe later
 	#hash_user = hashlib.md5(username)
 	#hash_pass = hashlib.md5(password)
 	#message = hash_user.hexdigest() + "#" + hash_pass.hexdigest() + "#" + client_public_key
-	message = "encrypted_login=" + username + "~!@#$%^&*()" + password
+
+
 	#Encrypt message
 	encrypted = server_public_key.encrypt(message, 32)
 	#Send Login Info to server
