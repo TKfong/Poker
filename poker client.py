@@ -47,11 +47,9 @@ if server_response == "Too many clients":
 	print "Now quiting"
 	server.close()
 	sys.exit()
-	print "b"
 
 #Otherwise, send client's public key for asymmetric encryption
 elif server_response == "Request Public Key":
-	print "c"
 	server.sendall("public_key=" + client_public_key.exportKey() + "\n")
 
 	#Login to obtain public key
@@ -84,33 +82,65 @@ elif server_response == "Request Public Key":
 	#Confirm request
 	if "Request Session Key" in decrypted:
 		#Generate AES key and information
-		key = Crypto.Random.OSRNG.posix.new().read(AES.block_size)
+		AES_key = Crypto.Random.OSRNG.posix.new().read(AES.block_size)
 		#print key
 		#Generate initialization vector
 		IV = ''.join(chr(random.randint(0, 0xFF)) for i in range(16))
 		#print IV
 		mode = AES.MODE_CBC
 		#Encrypt AES key and IV
-		encrypted = server_public_key.encrypt(key + "!@#$%^&*()" + IV, 32)
+		encrypted = server_public_key.encrypt(AES_key + "!@#$%^&*()" + IV, 32)
 		#Send to server
-		server.sendall("encrypted_message="+str(encrypted))
+		server.sendall(str(encrypted))
 	else:
 		print "nono"
 		sys.exit()
-	#Confirm reception of key and IV
+	#Decryptor/Encryptor check message
+	aes = AES.new(AES_key, mode, IV=IV)
+	#Waiting for players
+	signal = ''
+	while ("READY" not in signal):
+		server_response = server.recv(1024)
+		signal = aes.decrypt(server_response)
+		print signal
+		time.sleep(1)
+	#Get Player ID
+	player = ''
 	server_response = server.recv(1024)
-	#Decrypt check message
-	decryptor = AES.new(key, mode, IV=IV)
-	plain = decryptor.decrypt(server_response)
-	plain = plain.replace("~", '')
-	print plain
+	player = aes.decrypt(server_response)
+	print "Player " + player
+
+	#Ready up
+	print "type READY"
+	msg = raw_input("")
+	while (msg != "READY"):
+		print "type READY"
+		msg = raw_input("")
+	type(msg)
+	if len(msg) % 16 != 0:
+		msg += '~' * (16 - len(msg) % 16)
+	ciphertext = aes.encrypt(msg)
+	server.sendall(ciphertext)
+
+	#Should receive a hand of cards
+	server_response = server.recv(1024)
+	HandofCards = aes.decrypt(server_response)
+	HandofCards = HandofCards.replace("~", '')
+	print HandofCards
+	#Result: Win or Lose
+	server_response = server.recv(1024)
+	result = aes.decrypt(server_response)
+	result = result.replace("~", '')
+	print result
+	#print server_response
+	#while True:
 		#break
 	#Tell server to finish connection
 	#if message == "quit": break
 
-server.sendall("Quit")
-print "d"
-print(server.recv(1024)) 
+#server.sendall("Quit")
+print "done"
+#print(server.recv(1024)) 
 #Quit server response
 server.close()
 # By Timothy Fong

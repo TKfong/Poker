@@ -11,6 +11,7 @@ import mysql.connector
 from Crypto.Cipher import AES
 import MySQLdb
 import string, math, random
+import time
 
 encrypt_str = "encrypted_message="
 account_str = "make_account="
@@ -99,6 +100,9 @@ class ClientThread(threading.Thread):
 					cursor = db.cursor()
 				else:
 					print "no public key"
+					print "Thread closed"
+					num_clients = num_clients - 1
+					print "Number of clients: "+str(num_clients)
 					#return
 					sys.exit()
 				
@@ -131,7 +135,16 @@ class ClientThread(threading.Thread):
 					print("number of affected rows: {}".format(row_count))
 					#If row_count > 0 then username/password on databse
 					if row_count == 0:
+						#Login FAIL
+						message = "LOGIN FAIL"
+						#Encrypt with client public key
+						encrypted = client_key.encrypt(message, 32)
+						#Send to client
+						self.c.send(str(encrypted))
 						print "It Does Not Exist"
+						print "Thread closed"
+						num_clients = num_clients - 1
+						print "Number of clients: "+str(num_clients)
 						#return
 						sys.exit()
 					#Only one copy of the account on the database
@@ -175,24 +188,62 @@ class ClientThread(threading.Thread):
 						#Add Player ID
 						global ID
 						ID = ID + 1
+						playerID = ID
 						global active
 						if ID not in active:
-							active[active.index(0)] = ID
+							active[active.index(0)] = playerID
 						else:
 							sys.exit()
 						print "ID: " + str(ID)
 						update_stmt = ("UPDATE users SET Player_ID = %s where username = %s and password = %s")
-						cursor.execute(update_stmt, (ID, user, pw, ))
+						cursor.execute(update_stmt, (playerID, user, pw, ))
 						db.commit()
 						#AES Encryption (Symmetric Encryption)
-						encryptor = AES.new(sess_key, AES.MODE_CBC, IV)
+						#Decryptor/Encryptor
+						aes = AES.new(sess_key, AES.MODE_CBC, IV)
 
-						#text = 'loki dies'
-
+						#Start Poker Game
 						hand = ''
 						global game
+###############################################
 						game = Poker(num_clients)
-						Hand = game.hands[ID - 1]
+						#Wait for at least 2 players
+###############################################
+						while (num_clients < 2):
+							waiting = "WAITING"
+							if len(waiting) % 16 != 0:
+								waiting += '~' * (16 - len(waiting) % 16)
+							ciphertext = aes.encrypt(waiting)
+							self.c.send(ciphertext)
+							time.sleep(5)
+						#Minimum players ready
+						print "READY"
+						ready = "READY"
+						if len(ready) % 16 != 0:
+							ready += '~' * (16 - len(ready) % 16)
+						ciphertext = aes.encrypt(ready)
+						self.c.send(ciphertext)
+						time.sleep(5)
+						#Send Player ID
+						msg = str(playerID)
+						if len(msg) % 16 != 0:
+							msg += '~' * (16 - len(msg) % 16)
+						ciphertext = aes.encrypt(msg)
+						self.c.send(ciphertext)
+
+						#Confirm from players
+						#global reply
+						reply = ''
+						while ("READY" not in reply):
+							data = self.c.recv(1024)
+							reply = aes.decrypt(data)
+							print reply
+							time.sleep(1)
+						print "GO"
+
+						#Deal cards
+################################################
+						Hand = game.hands[playerID - 1]
 						#for i in range(len(Hand)):
 						sortedHand = sorted(Hand, reverse = True)
 						for card in sortedHand:
@@ -200,12 +251,48 @@ class ClientThread(threading.Thread):
 						print (hand)
 						text = game.isRoyal(Hand)
 
+						#Check hands
+						#hand1 = ''
+						#Hand1 = game.hands[0]
+						#sortedHand1 = sorted(Hand1, reverse = True)
+						#for card in sortedHand1:
+						#	hand1 = hand1 + str(card) + ' '
+						#print "hand1:"
+						#print (hand1)
+						#text = game.isRoyal(Hand1)
+						#hand2 = ''
+						#Hand2 = game.hands[1]
+						#sortedHand2 = sorted(Hand2, reverse = True)
+						#for card in sortedHand2:
+						#	hand2 = hand2 + str(card) + ' '
+						#print "hand2:"
+						#print (hand2)
+						#text = game.isRoyal(Hand2)
+
+						maxpoint = max(game.tlist)
+						maxindex = game.tlist.index(maxpoint)
+						maxindex = maxindex + 1
+						print('\nHand %d wins' % (maxindex))
+						if maxindex == playerID:
+							msg = "YOU WIN"
+							if len(msg) % 16 != 0:
+								msg += '~' * (16 - len(msg) % 16)
+							ciphertext = aes.encrypt(msg)
+							self.c.send(ciphertext)
+						else:
+							msg = "YOU LOSE"
+							if len(msg) % 16 != 0:
+								msg += '~' * (16 - len(msg) % 16)
+							ciphertext = aes.encrypt(msg)
+							self.c.send(ciphertext)
+
+
 						print "poker hand: "
 						#print text
 						#Text send using AES has to be a multiple to 16 so fill extra space with junk character ~
 						if len(hand) % 16 != 0:
 							hand += '~' * (16 - len(hand) % 16)
-						ciphertext = encryptor.encrypt(hand)
+						ciphertext = aes.encrypt(hand)
 						self.c.send(ciphertext)
 
 					#Beware if row_count != 1
@@ -217,7 +304,7 @@ class ClientThread(threading.Thread):
 					#break
 				#while True:
 				#elif decrypted == "Quit": 
-					self.c.send("Thread closed\n")
+					#self.c.send("Thread closed\n")
 					print "Thread closed"
 					num_clients = num_clients - 1
 					print "Number of clients: "+str(num_clients)
@@ -241,7 +328,7 @@ def Main():
 	#Socket listening on port
 	mysocket.listen(5)
 
-	#global game
+	global game
 	game = Poker(num_clients)
 
 	while True:
@@ -258,9 +345,6 @@ def Main():
 	#cnx.close()
 
 def make_account(c, data):
-	#Wait until data is received.
-	#data = c.recv(1024)
-	#data = data.replace("\r\n", '') #remove new line character
 	
 	#Create account on MySQL database
 	if data == "Account: OK":
@@ -269,30 +353,40 @@ def make_account(c, data):
 		#Send out public key
 		c.send("public_key=" + public_key0.exportKey() + "\n")
 		print "Public key sent to account maker."
-		#Update number of clients
-		global num_clients 
-		num_clients = num_clients + 1
-		#Limit number of clients server can handle to 5
-		if num_clients > 5:
-			c.send("Too many clients")
-			print "Fail: too many clients"
-			num_clients = num_clients - 1
-			print "Number of clients: " + str(num_clients)
-			return
-		#Otherwise prepare to receive data for new account
-		else:
-			c.send("Ready")
-			print "Number of clients: " + str(num_clients)
-			# Open database connection
-			db = MySQLdb.connect("localhost","root","root","poker" )
 
-			# prepare a cursor object using cursor() method
-			cursor = db.cursor()
+#		#Update number of clients
+#		global num_clients 
+#		num_clients = num_clients + 1
+#		#Limit number of clients server can handle to 5
+#		if num_clients > 5:
+#			c.send("Too many clients")
+#			print "Fail: too many clients"
+#			num_clients = num_clients - 1
+#			print "Number of clients: " + str(num_clients)
+#			return
+#		#Otherwise prepare to receive data for new account
+#		else:
+#			c.send("Ready")
+#			print "Number of clients: " + str(num_clients)
+#			# Open database connection
+#			db = MySQLdb.connect("localhost","root","root","poker" )
+#
+#			# prepare a cursor object using cursor() method
+#			cursor = db.cursor()
+
+		c.send("Ready")
+		print "Number of clients: " + str(num_clients)
+		# Open database connection
+		db = MySQLdb.connect("localhost","root","root","poker" )
+
+		# prepare a cursor object using cursor() method
+		cursor = db.cursor()
+
 		while True:
 			#Wait until username and password data is received
 			data = c.recv(1024)
 			#Encrypted data
-			print "Received:\nEncrypted message = "+str(data)
+			#print "Received:\nEncrypted message = "+str(data)
 			encrypted = eval(data)
 			#Decrypt message data
 			decrypted = private_key0.decrypt(encrypted)
@@ -323,7 +417,8 @@ def make_account(c, data):
 			elif decrypted == "Quit": 
 				c.send("Thread closed\n")
 				#Update number of clients connected
-				num_clients = num_clients - 1
+				#num_clients = num_clients - 1
+				print "Thread closed"
 				print "Number of clients: "+str(num_clients)
 				#if num_clients <= 0: break
 				break
