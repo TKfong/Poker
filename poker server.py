@@ -19,8 +19,12 @@ num_clients = 0
 client_public_key = "public_key="
 encrypt_log = "encrypted_login="
 ID = 0
+available = [True, True, True, True, True]
+given = [1, 2, 3, 4, 5]
 active = [0, 0, 0, 0, 0]
-
+pot = 0
+turn = 0
+current_bet = 0
 
 #Generate private and public keys
 #Keys for making accounts
@@ -147,6 +151,7 @@ class ClientThread(threading.Thread):
 						print "Number of clients: "+str(num_clients)
 						#return
 						sys.exit()
+					
 					#Only one copy of the account on the database
 					elif row_count == 1:
 						#Request for Session Key
@@ -171,8 +176,8 @@ class ClientThread(threading.Thread):
 						IV = data[1]
 
 
-						print "key: " + sess_key
-						print "IV: " + IV
+						#print "key: " + sess_key
+						#print "IV: " + IV
 
 
 						#Fill in Database
@@ -185,121 +190,201 @@ class ClientThread(threading.Thread):
 						update_stmt = ("UPDATE users SET IV = %s where username = %s and password = %s")
 						cursor.execute(update_stmt, (IV, user, pw, ))
 						db.commit()
-						#Add Player ID
-						global ID
-						ID = ID + 1
-						playerID = ID
+						#AES Encryption (Symmetric Encryption)
+						#Decryptor/Encryptor
+						aes = AES.new(sess_key, AES.MODE_CBC, IV)
+
+						#Obtain/Add Player ID
+						playerID = 0
+						#global ID
+						global available
+						global given
+						#Check if poker room full or not
+						if True in available:
+							#If there is room then assign an ID
+							if available[available.index(True)]:
+								ID = given[available.index(True)]
+								available[available.index(True)] = False
+							playerID = ID
+
+							#Send Player ID
+							msg = str(playerID)
+							if len(msg) % 16 != 0:
+								msg += '~' * (16 - len(msg) % 16)
+							ciphertext = aes.encrypt(msg)
+							self.c.send(ciphertext)
+						else:
+							#If room is full of players (5 players)
+							print "No room"
+							msg = str(playerID)
+							if len(msg) % 16 != 0:
+								msg += '~' * (16 - len(msg) % 16)
+							ciphertext = aes.encrypt(msg)
+							self.c.send(ciphertext)
+							print "Thread closed"
+							num_clients = num_clients - 1
+							print "Number of clients: "+str(num_clients)
+							sys.exit()
+
+						#Add IDs to active index
 						global active
 						if ID not in active:
 							active[active.index(0)] = playerID
 						else:
 							sys.exit()
 						print "ID: " + str(ID)
+						print active
+						#Update database with PlayerID
 						update_stmt = ("UPDATE users SET Player_ID = %s where username = %s and password = %s")
 						cursor.execute(update_stmt, (playerID, user, pw, ))
 						db.commit()
-						#AES Encryption (Symmetric Encryption)
-						#Decryptor/Encryptor
-						aes = AES.new(sess_key, AES.MODE_CBC, IV)
+						
 
 						#Start Poker Game
-						hand = ''
+#################################################################
 						global game
-###############################################
-						game = Poker(num_clients)
-						#Wait for at least 2 players
-###############################################
-						while (num_clients < 2):
-							waiting = "WAITING"
-							if len(waiting) % 16 != 0:
-								waiting += '~' * (16 - len(waiting) % 16)
-							ciphertext = aes.encrypt(waiting)
+						global pot
+						while True:
+							hand = ''
+							
+							pot = 0
+#######################################################
+							game = Poker(num_clients)
+							#Wait for at least 2 players
+#######################################################
+							while (num_clients < 2):
+								waiting = "WAITING"
+								if len(waiting) % 16 != 0:
+									waiting += '~' * (16 - len(waiting) % 16)
+								ciphertext = aes.encrypt(waiting)
+								self.c.send(ciphertext)
+								time.sleep(5)
+							
+							#Minimum players ready
+							print "READY"
+							ready = "READY"
+							if len(ready) % 16 != 0:
+								ready += '~' * (16 - len(ready) % 16)
+							ciphertext = aes.encrypt(ready)
 							self.c.send(ciphertext)
 							time.sleep(5)
-						#Minimum players ready
-						print "READY"
-						ready = "READY"
-						if len(ready) % 16 != 0:
-							ready += '~' * (16 - len(ready) % 16)
-						ciphertext = aes.encrypt(ready)
-						self.c.send(ciphertext)
-						time.sleep(5)
-						#Send Player ID
-						msg = str(playerID)
-						if len(msg) % 16 != 0:
-							msg += '~' * (16 - len(msg) % 16)
-						ciphertext = aes.encrypt(msg)
-						self.c.send(ciphertext)
+							
+							#Generate initial pot
+							pot = pot + 10
+							fetch_stmt = "SELECT * FROM users WHERE username = %s and password = %s"
+							cursor.execute(fetch_stmt, (user, pw, ))
+							results = cursor.fetchall()
+							print "RESULTS: "
+							for row in results:
+								money = row[5]
+							print "Initial: " + str(money)
+							money = money - 10
+							print "After buy-in: " + str(money)
 
-						#Confirm from players
-						#global reply
-						reply = ''
-						while ("READY" not in reply):
-							data = self.c.recv(1024)
-							reply = aes.decrypt(data)
-							print reply
-							time.sleep(1)
-						print "GO"
+							print "POT: " + str(pot)
+							#Problem pot is not updating fast enough
 
-						#Deal cards
-################################################
-						Hand = game.hands[playerID - 1]
-						#for i in range(len(Hand)):
-						sortedHand = sorted(Hand, reverse = True)
-						for card in sortedHand:
-							hand = hand + str(card) + ' '
-						print (hand)
-						text = game.isRoyal(Hand)
+							#Confirm from players
+							#global reply
+							reply = ''
+							while ("READY" not in reply):
+								data = self.c.recv(1024)
+								reply = aes.decrypt(data)
+								print reply
+								time.sleep(1)
+							print "GO"
+						
+							#Betting
+							global current_bet
+	#						bet = 0
+	#						msg = ""
+	#						if len(msg) % 16 != 0:
+	#							msg += '~' * (16 - len(msg) % 16)
+	#						ciphertext = aes.encrypt(msg)
+	#						self.c.send(ciphertext)
+						
 
-						#Check hands
-						#hand1 = ''
-						#Hand1 = game.hands[0]
-						#sortedHand1 = sorted(Hand1, reverse = True)
-						#for card in sortedHand1:
-						#	hand1 = hand1 + str(card) + ' '
-						#print "hand1:"
-						#print (hand1)
-						#text = game.isRoyal(Hand1)
-						#hand2 = ''
-						#Hand2 = game.hands[1]
-						#sortedHand2 = sorted(Hand2, reverse = True)
-						#for card in sortedHand2:
-						#	hand2 = hand2 + str(card) + ' '
-						#print "hand2:"
-						#print (hand2)
-						#text = game.isRoyal(Hand2)
 
-						maxpoint = max(game.tlist)
-						maxindex = game.tlist.index(maxpoint)
-						maxindex = maxindex + 1
-						print('\nHand %d wins' % (maxindex))
-						if maxindex == playerID:
-							msg = "YOU WIN"
-							if len(msg) % 16 != 0:
-								msg += '~' * (16 - len(msg) % 16)
-							ciphertext = aes.encrypt(msg)
+							#Deal cards
+########################################################
+							Hand = game.hands[playerID - 1]
+							#for i in range(len(Hand)):
+							sortedHand = sorted(Hand, reverse = True)
+							for card in sortedHand:
+								hand = hand + str(card) + ' '
+							print (hand)
+							text = game.isRoyal(Hand)
+
+							#Check hands
+#							hand1 = ''
+#							Hand1 = game.hands[0]
+#							sortedHand1 = sorted(Hand1, reverse = True)
+#							for card in sortedHand1:
+#								hand1 = hand1 + str(card) + ' '
+#							print "hand1:"
+#							print (hand1)
+#							text = game.isRoyal(Hand1)
+#						
+#							hand2 = ''
+#							Hand2 = game.hands[1]
+#							sortedHand2 = sorted(Hand2, reverse = True)
+#							for card in sortedHand2:
+#								hand2 = hand2 + str(card) + ' '
+#							print "hand2:"
+#							print (hand2)
+#							text = game.isRoyal(Hand2)
+
+							maxpoint = max(game.tlist)
+							maxindex = game.tlist.index(maxpoint)
+							maxindex = maxindex + 1
+							print('\nHand %d wins' % (maxindex))
+							if maxindex == playerID:
+								#Send result back to client
+								msg = "YOU WIN"
+								if len(msg) % 16 != 0:
+									msg += '~' * (16 - len(msg) % 16)
+								ciphertext = aes.encrypt(msg)
+								self.c.send(ciphertext)
+								#Update Money in database
+								money = money + pot
+								print "Winnings: " + str(money)
+								update_stmt = ("UPDATE users SET Money = %s where username = %s and password = %s")
+								cursor.execute(update_stmt, (str(money), user, pw, ))
+								db.commit()
+							else:
+								#Send result back to client
+								msg = "YOU LOSE"
+								if len(msg) % 16 != 0:
+									msg += '~' * (16 - len(msg) % 16)
+								ciphertext = aes.encrypt(msg)
+								self.c.send(ciphertext)
+								#Update Money in database
+								update_stmt = ("UPDATE users SET Money = %s where username = %s and password = %s")
+								cursor.execute(update_stmt, (str(money), user, pw, ))
+								db.commit()
+
+							print "poker hand: "
+							#print text
+							#Text send using AES has to be a multiple to 16 so fill extra space with junk character ~
+							if len(hand) % 16 != 0:
+								hand += '~' * (16 - len(hand) % 16)
+							ciphertext = aes.encrypt(hand)
 							self.c.send(ciphertext)
-						else:
-							msg = "YOU LOSE"
-							if len(msg) % 16 != 0:
-								msg += '~' * (16 - len(msg) % 16)
-							ciphertext = aes.encrypt(msg)
-							self.c.send(ciphertext)
-
-
-						print "poker hand: "
-						#print text
-						#Text send using AES has to be a multiple to 16 so fill extra space with junk character ~
-						if len(hand) % 16 != 0:
-							hand += '~' * (16 - len(hand) % 16)
-						ciphertext = aes.encrypt(hand)
-						self.c.send(ciphertext)
+###############################################################################
 
 					#Beware if row_count != 1
 					else:
 						print "Multiple copies of account exist"
 						#return
 						sys.exit()
+
+					#Delete session key and IV from database
+					update_stmt = ("UPDATE users SET session_key = 'NULL' where username = %s and password = %s")
+					cursor.execute(update_stmt, (user, pw, ))
+					db.commit()
+					update_stmt = ("UPDATE users SET IV = 'NULL' where username = %s and password = %s")
+					cursor.execute(update_stmt, (user, pw, ))
+					db.commit()
 					db.close()
 					#break
 				#while True:
@@ -405,8 +490,8 @@ def make_account(c, data):
 				#Insert into Mysql database
 				#cnx = mysql.connector.connect(user='root', password='root', host='127.0.0.1', database='poker')
 				#cursor = cnx.cursor()
-				insert_stmt = ("INSERT INTO users (username, password) VALUES (%s, %s)")
-				cursor.execute(insert_stmt, (data[0], data[1], ))
+				insert_stmt = ("INSERT INTO users (username, password, Money) VALUES (%s, %s, %s)")
+				cursor.execute(insert_stmt, (data[0], data[1], '1000'))
 				print data[0]
 				print data[1]
 				#End Mysql connection

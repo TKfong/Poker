@@ -97,41 +97,50 @@ elif server_response == "Request Public Key":
 		sys.exit()
 	#Decryptor/Encryptor check message
 	aes = AES.new(AES_key, mode, IV=IV)
-	#Waiting for players
-	signal = ''
-	while ("READY" not in signal):
-		server_response = server.recv(1024)
-		signal = aes.decrypt(server_response)
-		print signal
-		time.sleep(1)
 	#Get Player ID
 	player = ''
 	server_response = server.recv(1024)
 	player = aes.decrypt(server_response)
-	print "Player " + player
+	player = player.replace("~", '')
+	if player == "0":
+		print "Room full"
+		sys.exit()
+	else:
+		print "Player " + player
+	
+	#Poker game
+	while True:
+		#Waiting for players
+		signal = ''
+		while ("READY" not in signal):
+			server_response = server.recv(1024)
+			signal = aes.decrypt(server_response)
+			print signal
+			time.sleep(1)
+		
 
-	#Ready up
-	print "type READY"
-	msg = raw_input("")
-	while (msg != "READY"):
+		#Ready up
 		print "type READY"
 		msg = raw_input("")
-	type(msg)
-	if len(msg) % 16 != 0:
-		msg += '~' * (16 - len(msg) % 16)
-	ciphertext = aes.encrypt(msg)
-	server.sendall(ciphertext)
+		while (msg != "READY"):
+			print "type READY"
+			msg = raw_input("")
+		type(msg)
+		if len(msg) % 16 != 0:
+			msg += '~' * (16 - len(msg) % 16)
+		ciphertext = aes.encrypt(msg)
+		server.sendall(ciphertext)
 
-	#Should receive a hand of cards
-	server_response = server.recv(1024)
-	HandofCards = aes.decrypt(server_response)
-	HandofCards = HandofCards.replace("~", '')
-	print HandofCards
-	#Result: Win or Lose
-	server_response = server.recv(1024)
-	result = aes.decrypt(server_response)
-	result = result.replace("~", '')
-	print result
+		#Should receive a hand of cards
+		server_response = server.recv(1024)
+		HandofCards = aes.decrypt(server_response)
+		HandofCards = HandofCards.replace("~", '')
+		print HandofCards
+		#Result: Win or Lose
+		server_response = server.recv(1024)
+		result = aes.decrypt(server_response)
+		result = result.replace("~", '')
+		print result
 	#print server_response
 	#while True:
 		#break
