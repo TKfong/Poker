@@ -260,7 +260,7 @@ class ClientThread(threading.Thread):
 									waiting += '~' * (16 - len(waiting) % 16)
 								ciphertext = aes.encrypt(waiting)
 								self.c.send(ciphertext)
-								time.sleep(5)
+								time.sleep(1)
 							
 							#Minimum players ready
 							print "READY"
@@ -295,52 +295,6 @@ class ClientThread(threading.Thread):
 								print reply
 								time.sleep(1)
 							print "GO"
-						
-							#Betting
-							bet = 0
-							global current_bet
-							#global index
-							global turn
-							#Loop through list of active players
-							for index in range(len(active)):
-								if active[index] != 0:
-									#Determine which player get the turn
-									
-									
-									while turn != self.tID:
-										time.sleep(5)
-										if turn > num_clients:
-											break
-									#Player whose turn it is, bets
-									if playerID == turn:
-										print turn
-										turn = turn + 1
-										
-										msg = "Make bet. current_bet: " + str(current_bet) + " Your money: " + str(money)
-										if len(msg) % 16 != 0:
-											msg += '~' * (16 - len(msg) % 16)
-										ciphertext = aes.encrypt(msg)
-										self.c.send(ciphertext)
-										#Receive bet
-										data = self.c.recv(1024)
-										bet = aes.decrypt(data)
-										bet = bet.replace("~", '')
-										print "Player " + str(playerID) + " bet " + str(bet)
-										#if bet > current_bet:
-										#	current_bet = bet
-										#else:
-										#	print "Mistake"
-									#Other players wait
-									else:
-										msg = "Wait your turn"
-										#if len(msg) % 16 != 0:
-										#	msg += '~' * (16 - len(msg) % 16)
-										#ciphertext = aes.encrypt(msg)
-										#self.c.send(ciphertext)
-							print "This is thread number: " + str(self.tID)
-							print "Current bet: " + str(current_bet)
-							#print "turn " + str(turn)
-							
 
 							#Deal cards
 ########################################################
@@ -349,6 +303,7 @@ class ClientThread(threading.Thread):
 							sortedHand = sorted(Hand, reverse = True)
 							for card in sortedHand:
 								hand = hand + str(card) + ' '
+							print "poker hand: "
 							print (hand)
 							text = game.isRoyal(Hand)
 
@@ -370,11 +325,78 @@ class ClientThread(threading.Thread):
 #							print "hand2:"
 #							print (hand2)
 #							text = game.isRoyal(Hand2)
+							
+							#print text
+							#Text send using AES has to be a multiple to 16 
+							#so fill extra space with junk character ~
+							if len(hand) % 16 != 0:
+								hand += '~' * (16 - len(hand) % 16)
+							ciphertext = aes.encrypt(hand)
+							self.c.send(ciphertext)
 
-							maxpoint = max(game.tlist)
-							maxindex = game.tlist.index(maxpoint)
-							maxindex = maxindex + 1
-							print('\nHand %d wins' % (maxindex))
+							#Betting
+							bet = 0
+							global current_bet
+							#global index
+							global turn
+							#Loop through list of active players
+							for index in range(len(active)):
+								#Go through the list of active players
+								if active[index] != 0:
+									#Determine which player get the turn
+									print "looping"
+									#If not your turn then wait
+									while turn != self.tID:
+										time.sleep(5)
+										#If your turn is over, then wait until all players turn
+										#is over
+										if turn > num_clients:
+											break
+									#Player whose turn it is, bets
+									if playerID == turn:
+										print turn
+										#Send msg to player to make bet
+										msg = "Make bet. current_bet: "  + " Your money: " + str(money)
+										if len(msg) % 16 != 0:
+											msg += '~' * (16 - len(msg) % 16)
+										ciphertext = aes.encrypt(msg)
+										self.c.send(ciphertext)
+										#Receive bet
+										data = self.c.recv(1024)
+										bet = aes.decrypt(data)
+										bet = bet.replace("~", '')
+										print "Player " + str(playerID) + " bet " + str(bet)
+										#Increment turn to next player
+										turn = turn + 1
+										
+										#if bet >= current_bet:
+										#	current_bet = bet
+										#else:
+										#	print "Mistake"
+									#Other players wait
+									else:
+										msg = "Wait your turn"
+										#if len(msg) % 16 != 0:
+										#	msg += '~' * (16 - len(msg) % 16)
+										#ciphertext = aes.encrypt(msg)
+										#self.c.send(ciphertext)
+							print "This is thread number: " + str(self.tID)
+							print "Current bet: " + str(current_bet)
+							#print "turn " + str(turn)
+
+							#Have thread 1 do all the calculation for the winner
+							#Because thread 1 will always finish first
+							global maxpoint
+							global maxindex
+							if self.tID == 1:
+							#Calculate round winner
+								maxpoint = max(game.tlist)
+								maxindex = game.tlist.index(maxpoint)
+								maxindex = maxindex + 1
+								print('\nHand %d wins' % (maxindex))
+							
+							
+							#Disperse winnings
 							if maxindex == playerID:
 								#Send result back to client
 								msg = "YOU WIN"
@@ -400,13 +422,7 @@ class ClientThread(threading.Thread):
 								cursor.execute(update_stmt, (str(money), user, pw, ))
 								db.commit()
 
-							print "poker hand: "
-							#print text
-							#Text send using AES has to be a multiple to 16 so fill extra space with junk character ~
-							if len(hand) % 16 != 0:
-								hand += '~' * (16 - len(hand) % 16)
-							ciphertext = aes.encrypt(hand)
-							self.c.send(ciphertext)
+							
 ###############################################################################
 
 					#Beware if row_count != 1
@@ -548,6 +564,8 @@ def make_account(c, data):
 				#if num_clients <= 0: break
 				break
 
+#By Haely Shah
+#CMPE 209
 class Card(object):
 	RANKS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
 	SUITS = ('S', 'D', 'C', 'H')
@@ -817,6 +835,8 @@ class Poker(object):
 		    	mylist.append(card.rank)
 		print("High Card")
 		self.tlist.append(total_point)
+##By Haely Shah
+#CMPE 209
 
 if __name__ == '__main__':
 	Main()

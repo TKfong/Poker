@@ -130,6 +130,12 @@ elif server_response == "Request Public Key":
 		ciphertext = aes.encrypt(msg)
 		server.sendall(ciphertext)
 
+		#Receive a hand of cards
+		server_response = server.recv(1024)
+		HandofCards = aes.decrypt(server_response)
+		HandofCards = HandofCards.replace("~", '')
+		print HandofCards
+
 		#Betting
 		server_response = server.recv(1024)
 		msg = aes.decrypt(server_response)
@@ -142,11 +148,6 @@ elif server_response == "Request Public Key":
 		ciphertext = aes.encrypt(bet)
 		server.sendall(ciphertext)
 
-		#Should receive a hand of cards
-		server_response = server.recv(1024)
-		HandofCards = aes.decrypt(server_response)
-		HandofCards = HandofCards.replace("~", '')
-		print HandofCards
 		#Result: Win or Lose
 		server_response = server.recv(1024)
 		result = aes.decrypt(server_response)
