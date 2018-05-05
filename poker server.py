@@ -23,8 +23,9 @@ available = [True, True, True, True, True]
 given = [1, 2, 3, 4, 5]
 active = [0, 0, 0, 0, 0]
 pot = 0
-turn = 0
+turn = 1
 current_bet = 0
+flags = [0, 0, 0, 0, 0]
 
 #Generate private and public keys
 #Keys for making accounts
@@ -38,9 +39,10 @@ public_key1 = private_key1.publickey()
 
 # Thread class
 class ClientThread(threading.Thread):
-	def __init__ (self, c, addr):
+	def __init__ (self, c, addr, tID):
 		self.c = c
 		self.addr = addr
+		self.tID = tID
 		threading.Thread.__init__(self)
 		print "Starting new thread"
 
@@ -295,15 +297,50 @@ class ClientThread(threading.Thread):
 							print "GO"
 						
 							#Betting
+							bet = 0
 							global current_bet
-	#						bet = 0
-	#						msg = ""
-	#						if len(msg) % 16 != 0:
-	#							msg += '~' * (16 - len(msg) % 16)
-	#						ciphertext = aes.encrypt(msg)
-	#						self.c.send(ciphertext)
-						
-
+							#global index
+							global turn
+							#Loop through list of active players
+							for index in range(len(active)):
+								if active[index] != 0:
+									#Determine which player get the turn
+									
+									
+									while turn != self.tID:
+										time.sleep(5)
+										if turn > num_clients:
+											break
+									#Player whose turn it is, bets
+									if playerID == turn:
+										print turn
+										turn = turn + 1
+										
+										msg = "Make bet. current_bet: " + str(current_bet) + " Your money: " + str(money)
+										if len(msg) % 16 != 0:
+											msg += '~' * (16 - len(msg) % 16)
+										ciphertext = aes.encrypt(msg)
+										self.c.send(ciphertext)
+										#Receive bet
+										data = self.c.recv(1024)
+										bet = aes.decrypt(data)
+										bet = bet.replace("~", '')
+										print "Player " + str(playerID) + " bet " + str(bet)
+										#if bet > current_bet:
+										#	current_bet = bet
+										#else:
+										#	print "Mistake"
+									#Other players wait
+									else:
+										msg = "Wait your turn"
+										#if len(msg) % 16 != 0:
+										#	msg += '~' * (16 - len(msg) % 16)
+										#ciphertext = aes.encrypt(msg)
+										#self.c.send(ciphertext)
+							print "This is thread number: " + str(self.tID)
+							print "Current bet: " + str(current_bet)
+							#print "turn " + str(turn)
+							
 
 							#Deal cards
 ########################################################
@@ -415,12 +452,15 @@ def Main():
 
 	global game
 	game = Poker(num_clients)
+	tID = 1
 
 	while True:
 		#establish connection with client
 		c, addr = mysocket.accept()
 		#start a new thread and return its identifier
-		ClientThread(c, addr).start()
+		ClientThread(c, addr, tID).start()
+		#Increment thread identifier
+		tID = tID + 1
 
 	#Server to stop
 	c.send("Server stopped\n")

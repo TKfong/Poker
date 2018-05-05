@@ -118,7 +118,6 @@ elif server_response == "Request Public Key":
 			print signal
 			time.sleep(1)
 		
-
 		#Ready up
 		print "type READY"
 		msg = raw_input("")
@@ -129,6 +128,18 @@ elif server_response == "Request Public Key":
 		if len(msg) % 16 != 0:
 			msg += '~' * (16 - len(msg) % 16)
 		ciphertext = aes.encrypt(msg)
+		server.sendall(ciphertext)
+
+		#Betting
+		server_response = server.recv(1024)
+		msg = aes.decrypt(server_response)
+		msg = msg.replace("~", '')
+		print msg
+		bet = raw_input("bet amount: ")
+		type(bet)
+		if len(bet) % 16 != 0:
+			bet += '~' * (16 - len(bet) % 16)
+		ciphertext = aes.encrypt(bet)
 		server.sendall(ciphertext)
 
 		#Should receive a hand of cards
