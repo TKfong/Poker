@@ -137,16 +137,33 @@ elif server_response == "Request Public Key":
 		print HandofCards
 
 		#Betting
+		#Receive own money situation
+	#	while True:
 		server_response = server.recv(1024)
 		msg = aes.decrypt(server_response)
 		msg = msg.replace("~", '')
-		print msg
+		print "Make bet. Your money: " + msg
+		#Receive current bet value
+		server_response = server.recv(1024)
+		msg = aes.decrypt(server_response)
+		msg = msg.replace("~", '')
+		print "Current_bet: " + msg
+		current_bet = int(msg)
+		#Input bet amount
 		bet = raw_input("bet amount: ")
 		type(bet)
+		#Bet has to be great than or equal to the current bet
+		while(bet < current_bet):
+			bet = raw_input("bet amount: ")
+			type(bet)
 		if len(bet) % 16 != 0:
 			bet += '~' * (16 - len(bet) % 16)
 		ciphertext = aes.encrypt(bet)
 		server.sendall(ciphertext)
+			#Check if all 
+	#		server_response = server.recv(1024)
+	#		msg = aes.decrypt(server_response)
+	#		msg = msg.replace("~", '')
 
 		#Result: Win or Lose
 		server_response = server.recv(1024)

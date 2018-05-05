@@ -339,12 +339,18 @@ class ClientThread(threading.Thread):
 							global current_bet
 							#global index
 							global turn
+
+							#while True:
+							global check
+							check = True
+							turn = 1
 							#Loop through list of active players
 							for index in range(len(active)):
 								#Go through the list of active players
 								if active[index] != 0:
 									#Determine which player get the turn
 									print "looping"
+									print turn
 									#If not your turn then wait
 									while turn != self.tID:
 										time.sleep(5)
@@ -354,9 +360,15 @@ class ClientThread(threading.Thread):
 											break
 									#Player whose turn it is, bets
 									if playerID == turn:
-										print turn
 										#Send msg to player to make bet
-										msg = "Make bet. current_bet: "  + " Your money: " + str(money)
+										msg = str(money)
+										if len(msg) % 16 != 0:
+											msg += '~' * (16 - len(msg) % 16)
+										ciphertext = aes.encrypt(msg)
+										self.c.send(ciphertext)
+										time.sleep(1)
+										#Send current bet
+										msg = str(current_bet)
 										if len(msg) % 16 != 0:
 											msg += '~' * (16 - len(msg) % 16)
 										ciphertext = aes.encrypt(msg)
@@ -368,11 +380,11 @@ class ClientThread(threading.Thread):
 										print "Player " + str(playerID) + " bet " + str(bet)
 										#Increment turn to next player
 										turn = turn + 1
-										
-										#if bet >= current_bet:
-										#	current_bet = bet
-										#else:
-										#	print "Mistake"
+									
+										if bet >= current_bet:
+											current_bet = bet
+										else:
+											print "Mistake"
 									#Other players wait
 									else:
 										msg = "Wait your turn"
@@ -380,6 +392,16 @@ class ClientThread(threading.Thread):
 										#	msg += '~' * (16 - len(msg) % 16)
 										#ciphertext = aes.encrypt(msg)
 										#self.c.send(ciphertext)
+							#	if bet < current_bet:
+							#		check = False
+							#	if check:
+							#		msg = "Wait your turn"
+							#		if len(msg) % 16 != 0:
+							#			msg += '~' * (16 - len(msg) % 16)
+							#		ciphertext = aes.encrypt(msg)
+							#		self.c.send(ciphertext)
+							#		break
+
 							print "This is thread number: " + str(self.tID)
 							print "Current bet: " + str(current_bet)
 							#print "turn " + str(turn)
