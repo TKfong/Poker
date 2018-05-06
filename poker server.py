@@ -12,6 +12,9 @@ from Crypto.Cipher import AES
 import MySQLdb
 import string, math, random
 import time
+from Crypto.Signature import PKCS1_v1_5
+from Crypto.Hash import SHA256
+from threading import Thread,Semaphore
 
 encrypt_str = "encrypted_message="
 account_str = "make_account="
@@ -26,6 +29,7 @@ pot = 0
 turn = 1
 current_bet = 0
 flags = [0, 0, 0, 0, 0]
+check = True
 
 #Generate private and public keys
 #Keys for making accounts
@@ -36,6 +40,22 @@ public_key0 = private_key0.publickey()
 random_generator = Random.new().read
 private_key1 = RSA.generate(1024, random_generator)
 public_key1 = private_key1.publickey()
+
+#Barrier class
+class Barrier:
+	def __init__(self, n):
+		self.n = n
+		self.count = 0
+		self.mutex = Semaphore(1)
+		self.barrier = Semaphore(0)
+
+	def wait(self):
+		self.mutex.acquire()
+		self.count = self.count + 1
+		self.mutex.release()
+		if self.count == self.n: self.barrier.release()
+		self.barrier.acquire()
+		self.barrier.release()
 
 # Thread class
 class ClientThread(threading.Thread):
@@ -129,7 +149,7 @@ class ClientThread(threading.Thread):
 					#print "Decrypted message = " + decrypted
 
 
-					data = decrypted.split("~!@#$%^&*()")
+					data = decrypted.split("!@#$%^&*()")
 					#Obtain username and password
 					user = data[0]
 					pw = data[1]
@@ -241,17 +261,21 @@ class ClientThread(threading.Thread):
 						cursor.execute(update_stmt, (playerID, user, pw, ))
 						db.commit()
 						
-
+						
+						
 						#Start Poker Game
 #################################################################
+						global barrier1
+						global barrier2
+						global barrier3
 						global game
 						global pot
+						global current_bet
+						global turn
+						global maxpoint
+						global maxindex
+						global check
 						while True:
-							hand = ''
-							
-							pot = 0
-#######################################################
-							game = Poker(num_clients)
 							#Wait for at least 2 players
 #######################################################
 							while (num_clients < 2):
@@ -269,8 +293,24 @@ class ClientThread(threading.Thread):
 								ready += '~' * (16 - len(ready) % 16)
 							ciphertext = aes.encrypt(ready)
 							self.c.send(ciphertext)
-							time.sleep(5)
+							time.sleep(1)
+
+							#Confirm from players
+							#global reply
+							reply = ''
+							while ("READY" not in reply):
+								data = self.c.recv(1024)
+								reply = aes.decrypt(data)
+								print reply
+								time.sleep(1)
+							print "GO"
 							
+							hand = ''
+							current_bet = 0
+							pot = 0
+							check = True
+							game = Poker(num_clients)
+
 							#Generate initial pot
 							pot = pot + 10
 							fetch_stmt = "SELECT * FROM users WHERE username = %s and password = %s"
@@ -284,18 +324,7 @@ class ClientThread(threading.Thread):
 							print "After buy-in: " + str(money)
 
 							print "POT: " + str(pot)
-							#Problem pot is not updating fast enough
-
-							#Confirm from players
-							#global reply
-							reply = ''
-							while ("READY" not in reply):
-								data = self.c.recv(1024)
-								reply = aes.decrypt(data)
-								print reply
-								time.sleep(1)
-							print "GO"
-
+						
 							#Deal cards
 ########################################################
 							Hand = game.hands[playerID - 1]
@@ -303,7 +332,7 @@ class ClientThread(threading.Thread):
 							sortedHand = sorted(Hand, reverse = True)
 							for card in sortedHand:
 								hand = hand + str(card) + ' '
-							print "poker hand: "
+							print "poker hand" + str(playerID) +": "
 							print (hand)
 							text = game.isRoyal(Hand)
 
@@ -336,86 +365,173 @@ class ClientThread(threading.Thread):
 
 							#Betting
 							bet = 0
-							global current_bet
+							#global current_bet
 							#global index
-							global turn
-
-							#while True:
-							global check
-							check = True
-							turn = 1
-							#Loop through list of active players
-							for index in range(len(active)):
-								#Go through the list of active players
-								if active[index] != 0:
-									#Determine which player get the turn
-									print "looping"
-									print turn
-									#If not your turn then wait
-									while turn != self.tID:
-										time.sleep(5)
-										#If your turn is over, then wait until all players turn
-										#is over
-										if turn > num_clients:
-											break
-									#Player whose turn it is, bets
-									if playerID == turn:
-										#Send msg to player to make bet
-										msg = str(money)
-										if len(msg) % 16 != 0:
-											msg += '~' * (16 - len(msg) % 16)
-										ciphertext = aes.encrypt(msg)
-										self.c.send(ciphertext)
-										time.sleep(1)
-										#Send current bet
-										msg = str(current_bet)
-										if len(msg) % 16 != 0:
-											msg += '~' * (16 - len(msg) % 16)
-										ciphertext = aes.encrypt(msg)
-										self.c.send(ciphertext)
-										#Receive bet
-										data = self.c.recv(1024)
-										bet = aes.decrypt(data)
-										bet = bet.replace("~", '')
-										print "Player " + str(playerID) + " bet " + str(bet)
-										#Increment turn to next player
-										turn = turn + 1
-									
-										if bet >= current_bet:
-											current_bet = bet
+							
+							#Betting while loop
+							while True:
+								barrier1 = Barrier(num_clients)
+								barrier2 = Barrier(num_clients)
+								print "Make barriers"
+								turn = 1
+								check = True
+								print "playerID"
+								print playerID
+								print "active array size"
+								print range(len(active))
+								#Loop through list of active players
+								for index in range(len(active)):
+									#Go through the list of active players
+									print "Index is " + str(index)
+									if active[index] != 0:
+										#Determine which player get the turn
+										print "looping"
+										print turn
+										#If not your turn then wait
+										while turn != self.tID:
+											time.sleep(5)
+											#If your turn is over, then wait until all players turn											#is over
+											if turn > num_clients:
+												break
+										#Player whose turn it is, bets
+										if playerID == turn:
+											print "sending bet messages"
+											#Send player's money info
+											msg = str(money)
+											if len(msg) % 16 != 0:
+												msg += '~' * (16 - len(msg) % 16)
+											ciphertext = aes.encrypt(msg)
+											self.c.send(ciphertext)
+											time.sleep(1)
+											#Send pot info to player
+											msg = str(pot)
+											if len(msg) % 16 != 0:
+												msg += '~' * (16 - len(msg) % 16)
+											ciphertext = aes.encrypt(msg)
+											self.c.send(ciphertext)
+											time.sleep(1)
+											#Send current bet
+											print "Sending current bet"
+											msg = str(current_bet)
+											if len(msg) % 16 != 0:
+												msg += '~' * (16 - len(msg) % 16)
+											ciphertext = aes.encrypt(msg)
+											self.c.send(ciphertext)
+											time.sleep(1)
+											#Receive bet
+											print "Receiving bet"
+											data = self.c.recv(1024)
+											signed_bet = aes.decrypt(data)
+											signed_bet = signed_bet.replace("~", '')
+											#Player's bet and signature
+											data = signed_bet.split("!@#$%^&*()")
+											bet = data[0]
+											sig = data[1]
+											#Hash bet for verification
+											digest = SHA256.new()
+											digest.update(bet)
+											#Load public key and verify message
+											verifier = PKCS1_v1_5.new(client_key)
+											verified = verifier.verify(digest, sig)
+											#assert verified, "Signature verification failed"
+											print verified
+											if verified == False:
+												#Resending request for bet
+												msg = "Resend please"
+												if len(msg) % 16 != 0:
+													msg += '~' * (16 - len(msg) % 16)
+												ciphertext = aes.encrypt(msg)
+												self.c.send(ciphertext)
+												#Receive player bet
+												data = self.c.recv(1024)
+												signed_bet = aes.decrypt(data)
+												signed_bet = signed_bet.replace("~", '')
+												#Player's bet and signature
+												data = signed_bet.split("!@#$%^&*()")
+												bet = data[0]
+												sig = data[1]
+												#Hash bet for verification
+												digest = SHA256.new()
+												digest.update(bet)
+												#Load public key and verify message
+												verifier = PKCS1_v1_5.new(client_key)
+												verified = verifier.verify(digest, sig)
+											else: 
+												#Resending request for bet
+												msg = "No problem"
+												if len(msg) % 16 != 0:
+													msg += '~' * (16 - len(msg) % 16)
+												ciphertext = aes.encrypt(msg)
+												self.c.send(ciphertext)
+												print "Successfully verified message"
+												time.sleep(1)
+										
+											print "Player " + str(playerID) + " bet " + str(bet)
+											#Increment turn to next player
+											print "Next turn"
+											turn = turn + 1
+											bet = int(bet)
+											if bet >= current_bet:
+												current_bet = bet
+											else:
+												print "Mistake"
+										#Other players wait
 										else:
-											print "Mistake"
-									#Other players wait
-									else:
-										msg = "Wait your turn"
-										#if len(msg) % 16 != 0:
-										#	msg += '~' * (16 - len(msg) % 16)
-										#ciphertext = aes.encrypt(msg)
-										#self.c.send(ciphertext)
-							#	if bet < current_bet:
-							#		check = False
-							#	if check:
-							#		msg = "Wait your turn"
-							#		if len(msg) % 16 != 0:
-							#			msg += '~' * (16 - len(msg) % 16)
-							#		ciphertext = aes.encrypt(msg)
-							#		self.c.send(ciphertext)
-							#		break
+											msg = "Wait your turn"
+											#if len(msg) % 16 != 0:
+											#	msg += '~' * (16 - len(msg) % 16)
+											#ciphertext = aes.encrypt(msg)
+											#self.c.send(ciphertext)
+								barrier1.wait()
+								print "Past the barrier1"
+								#bet = 10
+								#current_bet = 20
+								#check = True
+								loop = 1
+								#print "playerID"
+								print playerID
+								#Check bet vs current_bet
+								if bet != current_bet:
+									check = False
+									print "no good"
+								barrier2.wait()
+								print "Past the barrier2"
+								if check == True:
+									msg = "Move on"
+									if len(msg) % 16 != 0:
+										msg += '~' * (16 - len(msg) % 16)
+									ciphertext = aes.encrypt(msg)
+									self.c.send(ciphertext)
+									time.sleep(1)
+
+									break
+								else:
+									print "ReBet"
+									msg = "ReBet"
+									if len(msg) % 16 != 0:
+										msg += '~' * (16 - len(msg) % 16)
+									ciphertext = aes.encrypt(msg)
+									self.c.send(ciphertext)
+									time.sleep(1)
 
 							print "This is thread number: " + str(self.tID)
 							print "Current bet: " + str(current_bet)
 							#print "turn " + str(turn)
 
-							#Have thread 1 do all the calculation for the winner
-							#Because thread 1 will always finish first
-							global maxpoint
-							global maxindex
-							if self.tID == 1:
+							#Final barrier to update pot
+							barrier3 = Barrier(num_clients)
+							#Update pot
+							pot = pot + current_bet
+							#Update money
+							money = money - current_bet
+							
+							barrier3.wait()
 							#Calculate round winner
-								maxpoint = max(game.tlist)
-								maxindex = game.tlist.index(maxpoint)
-								maxindex = maxindex + 1
-								print('\nHand %d wins' % (maxindex))
+							#if self.tID == 1:
+							maxpoint = max(game.tlist)
+							maxindex = game.tlist.index(maxpoint)
+							maxindex = maxindex + 1
+							print('\nHand %d wins' % (maxindex))
 							
 							
 							#Disperse winnings
@@ -473,7 +589,8 @@ class ClientThread(threading.Thread):
 def Main():
 	#Declaration of server attributes
 	mysocket = socket.socket()
-	host = socket.gethostbyname(socket.getfqdn())
+	#host = socket.gethostbyname(socket.getfqdn())
+	host = "127.0.0.1" 
 	port = 7777
 	#host check
 	if host == "127.0.1.1":
@@ -564,7 +681,7 @@ def make_account(c, data):
 				c.send("Server: OK")
 				print "Decrypted message = " + decrypted
 				#separate username and password
-				data = decrypted.split("~!@#$%^&*()")
+				data = decrypted.split("!@#$%^&*()")
 				#Insert into Mysql database
 				#cnx = mysql.connector.connect(user='root', password='root', host='127.0.0.1', database='poker')
 				#cursor = cnx.cursor()

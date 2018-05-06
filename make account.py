@@ -44,7 +44,7 @@ elif server_response == "Ready":
 	password = raw_input("Password: ")
 	type(password)
 	#encrypted = server_public_key.encrypt(hash_user.hexdigest() + "#" + hash_pass.hexdigest(), 32)
-	message = "make_account=" + username + "~!@#$%^&*()" + password
+	message = "make_account=" + username + "!@#$%^&*()" + password
 	encrypted = server_public_key.encrypt(message, 32)
 	server.sendall(str(encrypted))
 

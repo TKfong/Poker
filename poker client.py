@@ -8,11 +8,13 @@ import os, random, struct, sys
 import Crypto.Random
 from Crypto.Cipher import AES
 import time
+from Crypto.Hash import SHA256
+from Crypto.Signature import PKCS1_v1_5
 
 #Declare server's attributes
 server = socket.socket()
-host = "10.0.2.15"
-#host = "127.0.1.1"
+#host = "10.0.2.15"
+host = "127.0.0.1"
 port = 7777
 #Connect to server
 server.connect((host, port))
@@ -57,7 +59,7 @@ elif server_response == "Request Public Key":
 	type(username)
 	password = raw_input("Password: ")
 	type(password)
-	message = "encrypted_login=" + username + "~!@#$%^&*()" + password
+	message = "encrypted_login=" + username + "!@#$%^&*()" + password
 
 	#hashing, maybe later
 	#hash_user = hashlib.md5(username)
@@ -111,6 +113,7 @@ elif server_response == "Request Public Key":
 	#Poker game
 	while True:
 		#Waiting for players
+		print "SIGNAL"
 		signal = ''
 		while ("READY" not in signal):
 			server_response = server.recv(1024)
@@ -138,32 +141,85 @@ elif server_response == "Request Public Key":
 
 		#Betting
 		#Receive own money situation
-	#	while True:
-		server_response = server.recv(1024)
-		msg = aes.decrypt(server_response)
-		msg = msg.replace("~", '')
-		print "Make bet. Your money: " + msg
-		#Receive current bet value
-		server_response = server.recv(1024)
-		msg = aes.decrypt(server_response)
-		msg = msg.replace("~", '')
-		print "Current_bet: " + msg
-		current_bet = int(msg)
-		#Input bet amount
-		bet = raw_input("bet amount: ")
-		type(bet)
-		#Bet has to be great than or equal to the current bet
-		while(bet < current_bet):
+		while True:
+			#money = 0
+			current_bet = 0
+			bet = 0
+			#Receive Money info
+			server_response = server.recv(1024)
+			msg = aes.decrypt(server_response)
+			msg = msg.replace("~", '')
+			msg = msg.replace("\r\n", '')
+			print "Make a bet. Your money: " + msg
+			money = int(msg)
+			#Receive Pot info
+			server_response = server.recv(1024)
+			msg = aes.decrypt(server_response)
+			msg = msg.replace("~", '')
+			print "Pot: " + msg
+			#Receive current bet value
+			server_response = server.recv(1024)
+			msg = aes.decrypt(server_response)
+			msg = msg.replace("~", '')
+			msg = msg.replace("\r\n", '')
+			print "Current_bet: " + msg
+			current_bet = int(msg)
+			#Input bet amount
 			bet = raw_input("bet amount: ")
 			type(bet)
-		if len(bet) % 16 != 0:
-			bet += '~' * (16 - len(bet) % 16)
-		ciphertext = aes.encrypt(bet)
-		server.sendall(ciphertext)
-			#Check if all 
-	#		server_response = server.recv(1024)
-	#		msg = aes.decrypt(server_response)
-	#		msg = msg.replace("~", '')
+			#Bet has to be great than or equal to the current bet
+			#Bet has to be less or equal to your current money
+			while(int(bet) < current_bet or int(bet) > money):
+				bet = raw_input("bet amount: ")
+				type(bet)
+			#Round numbers if jerks type float values
+			bet = int(bet)
+			bet = str(bet)
+		
+			#Hash the bet
+			digest = SHA256.new()
+			digest.update(bet)
+			#Load private key and sign message
+			signer = PKCS1_v1_5.new(client_private_key)
+			sig = signer.sign(digest)
+			#Sign the bet with RSA private key
+			signed_bet = bet + "!@#$%^&*()" + sig
+			#Encrypt with AES and send to server
+			if len(signed_bet) % 16 != 0:
+				signed_bet += '~' * (16 - len(signed_bet) % 16)
+			ciphertext = aes.encrypt(signed_bet)
+			server.sendall(ciphertext)
+		
+			#Receive verification response
+			server_response = server.recv(1024)
+			msg = aes.decrypt(server_response)
+			msg = msg.replace("~", '')
+			if "Resend" in msg:
+				#Hash the bet
+				digest = SHA256.new()
+				digest.update(bet)
+				#Load private key and sign message
+				signer = PKCS1_v1_5.new(client_private_key)
+				sig = signer.sign(digest)
+				#Sign the bet with RSA private key
+				signed_bet = bet + "!@#$%^&*()" + sig
+				#Encrypt with AES and send to server
+				if len(signed_bet) % 16 != 0:
+					signed_bet += '~' * (16 - len(signed_bet) % 16)
+				ciphertext = aes.encrypt(signed_bet)
+				server.sendall(ciphertext)
+			else:
+				#Should print No problem
+				print msg
+			#Check if all player's bets are the same 
+			server_response = server.recv(1024)
+			msg = aes.decrypt(server_response)
+			msg = msg.replace("~", '')
+			if "Move" in  msg:
+				print msg
+				break
+			else:
+				print msg
 
 		#Result: Win or Lose
 		server_response = server.recv(1024)
