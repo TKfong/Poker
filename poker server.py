@@ -30,6 +30,7 @@ turn = 1
 current_bet = 0
 flags = [0, 0, 0, 0, 0]
 check = True
+num_players = 0
 
 #Generate private and public keys
 #Keys for making accounts
@@ -265,20 +266,77 @@ class ClientThread(threading.Thread):
 						
 						#Start Poker Game
 #################################################################
-						global barrier1
-						global barrier2
-						global barrier3
-						global game
-						global pot
-						global current_bet
-						global turn
-						global maxpoint
-						global maxindex
-						global check
+						
 						while True:
-							#Wait for at least 2 players
-#######################################################
-							while (num_clients < 2):
+							#Global variables
+							global barrier1
+							global barrier2
+							global barrier3
+							global game
+							global pot
+							global current_bet
+							global turn
+							global maxpoint
+							global maxindex
+							global check
+							global num_players
+							#Initialize several variables for each round of poker
+							hand = ''
+							current_bet = 0
+							pot = 0
+							check = True
+							print "STARTING GAME"
+
+							#Confirm from players
+							reply = ''
+							while (reply != "READY" and reply != "QUIT"):
+								data = self.c.recv(1024)
+								reply = aes.decrypt(data)
+								reply = reply.replace("~", '')
+								reply = reply.replace("\r\n", '')
+								time.sleep(1)
+							#data = self.c.recv(1024)
+							#reply = aes.decrypt(data)
+
+							print "GO"
+							
+							#Check reply message from client
+							#Exit game
+							if "QUIT" in reply:
+								#Update available ID list
+								#If there is room then assign an ID
+								print available[playerID - 1]
+								if available[playerID - 1] == False:
+									available[playerID - 1] = True
+								#Remove from active list
+								if playerID in active:
+									active[active.index(playerID)] = 0
+									print active
+								else:
+									sys.exit()
+								#Delete session key and IV from database
+								update_stmt = ("UPDATE users SET session_key = 'NULL' where username = %s and password = %s")
+								cursor.execute(update_stmt, (user, pw, ))
+								db.commit()
+								update_stmt = ("UPDATE users SET IV = 'NULL' where username = %s and password = %s")
+								cursor.execute(update_stmt, (user, pw, ))
+								print "Removed session key data"
+								db.commit()
+								db.close()
+				
+								#End Thread
+								print "Thread closed"
+								num_clients = num_clients - 1
+								print "Number of clients: "+str(num_clients)
+								sys.exit()
+							else:
+								print reply
+								num_players = num_players +1
+								print num_players
+							
+							#Wait for minimum number of players
+							###################################
+							while (num_players < 2):
 								waiting = "WAITING"
 								if len(waiting) % 16 != 0:
 									waiting += '~' * (16 - len(waiting) % 16)
@@ -287,28 +345,17 @@ class ClientThread(threading.Thread):
 								time.sleep(1)
 							
 							#Minimum players ready
-							print "READY"
-							ready = "READY"
-							if len(ready) % 16 != 0:
-								ready += '~' * (16 - len(ready) % 16)
-							ciphertext = aes.encrypt(ready)
+							print "DEALING"
+							deal = "DEALING"
+							if len(deal) % 16 != 0:
+								deal += '~' * (16 - len(deal) % 16)
+							ciphertext = aes.encrypt(deal)
 							self.c.send(ciphertext)
 							time.sleep(1)
 
-							#Confirm from players
-							#global reply
-							reply = ''
-							while ("READY" not in reply):
-								data = self.c.recv(1024)
-								reply = aes.decrypt(data)
-								print reply
-								time.sleep(1)
-							print "GO"
 							
-							hand = ''
-							current_bet = 0
-							pot = 0
-							check = True
+
+							
 							game = Poker(num_clients)
 
 							#Generate initial pot
@@ -372,7 +419,10 @@ class ClientThread(threading.Thread):
 							while True:
 								barrier1 = Barrier(num_clients)
 								barrier2 = Barrier(num_clients)
+								#Final barrier to update pot
+								barrier3 = Barrier(num_clients)
 								print "Make barriers"
+
 								turn = 1
 								check = True
 								print "playerID"
@@ -382,7 +432,7 @@ class ClientThread(threading.Thread):
 								#Loop through list of active players
 								for index in range(len(active)):
 									#Go through the list of active players
-									print "Index is " + str(index)
+									#print "Index is " + str(index)
 									if active[index] != 0:
 										#Determine which player get the turn
 										print "looping"
@@ -483,7 +533,7 @@ class ClientThread(threading.Thread):
 											#ciphertext = aes.encrypt(msg)
 											#self.c.send(ciphertext)
 								barrier1.wait()
-								print "Past the barrier1"
+								#print "Past the barrier1"
 								#bet = 10
 								#current_bet = 20
 								#check = True
@@ -495,7 +545,7 @@ class ClientThread(threading.Thread):
 									check = False
 									print "no good"
 								barrier2.wait()
-								print "Past the barrier2"
+								#print "Past the barrier2"
 								if check == True:
 									msg = "Move on"
 									if len(msg) % 16 != 0:
@@ -514,12 +564,11 @@ class ClientThread(threading.Thread):
 									self.c.send(ciphertext)
 									time.sleep(1)
 
-							print "This is thread number: " + str(self.tID)
-							print "Current bet: " + str(current_bet)
+							#print "This is thread number: " + str(self.tID)
+							#print "Current bet: " + str(current_bet)
 							#print "turn " + str(turn)
 
-							#Final barrier to update pot
-							barrier3 = Barrier(num_clients)
+							
 							#Update pot
 							pot = pot + current_bet
 							#Update money
@@ -533,7 +582,7 @@ class ClientThread(threading.Thread):
 							maxindex = maxindex + 1
 							print('\nHand %d wins' % (maxindex))
 							
-							
+							print "Pot is: " + str(pot)
 							#Disperse winnings
 							if maxindex == playerID:
 								#Send result back to client
@@ -559,6 +608,7 @@ class ClientThread(threading.Thread):
 								update_stmt = ("UPDATE users SET Money = %s where username = %s and password = %s")
 								cursor.execute(update_stmt, (str(money), user, pw, ))
 								db.commit()
+							num_players = 0
 
 							
 ###############################################################################
@@ -577,14 +627,12 @@ class ClientThread(threading.Thread):
 					cursor.execute(update_stmt, (user, pw, ))
 					db.commit()
 					db.close()
-					#break
-				#while True:
-				#elif decrypted == "Quit": 
-					#self.c.send("Thread closed\n")
+					
+					#End Thread
 					print "Thread closed"
 					num_clients = num_clients - 1
 					print "Number of clients: "+str(num_clients)
-					if num_clients <= 0: return
+					sys.exit()
 
 def Main():
 	#Declaration of server attributes

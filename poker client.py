@@ -112,26 +112,41 @@ elif server_response == "Request Public Key":
 	
 	#Poker game
 	while True:
+		#Ready up
+		#print "type READY"
+
+		msg = raw_input("type READY or QUIT: ")
+		while msg != "READY" and msg != "QUIT":
+			#print "type READY or QUIT"
+			msg = raw_input("type READY or QUIT: ")
+		type(msg)
+		#msg = "QUIT"
+
+		if "READY" in msg:
+			print msg
+			if len(msg) % 16 != 0:
+				msg += '~' * (16 - len(msg) % 16)
+			ciphertext = aes.encrypt(msg)
+			server.sendall(ciphertext)
+		elif "QUIT" in msg:
+			print msg
+			if len(msg) % 16 != 0:
+				msg += '~' * (16 - len(msg) % 16)
+			ciphertext = aes.encrypt(msg)
+			server.sendall(ciphertext)
+			break
+
 		#Waiting for players
 		print "SIGNAL"
 		signal = ''
-		while ("READY" not in signal):
+		while("DEALING" not in signal):
 			server_response = server.recv(1024)
 			signal = aes.decrypt(server_response)
 			print signal
 			time.sleep(1)
 		
-		#Ready up
-		print "type READY"
-		msg = raw_input("")
-		while (msg != "READY"):
-			print "type READY"
-			msg = raw_input("")
-		type(msg)
-		if len(msg) % 16 != 0:
-			msg += '~' * (16 - len(msg) % 16)
-		ciphertext = aes.encrypt(msg)
-		server.sendall(ciphertext)
+		
+			
 
 		#Receive a hand of cards
 		server_response = server.recv(1024)
