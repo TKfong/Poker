@@ -159,7 +159,7 @@ class ClientThread(threading.Thread):
 					cursor.execute(check_stmt, (user, pw, ))				
 					#Check for a row on the database
 					row_count = cursor.rowcount
-					print("number of affected rows: {}".format(row_count))
+					#print("number of affected rows: {}".format(row_count))
 					#If row_count > 0 then username/password on databse
 					if row_count == 0:
 						#Login FAIL
@@ -177,6 +177,7 @@ class ClientThread(threading.Thread):
 					
 					#Only one copy of the account on the database
 					elif row_count == 1:
+						print "Exists in database"
 						#Request for Session Key
 						message = "Request Session Key"
 						#Encrypt with client public key
@@ -269,9 +270,12 @@ class ClientThread(threading.Thread):
 						
 						while True:
 							#Global variables
+							global barrier0
 							global barrier1
 							global barrier2
 							global barrier3
+							global barrier4
+							global barrier5
 							global game
 							global pot
 							global current_bet
@@ -305,7 +309,7 @@ class ClientThread(threading.Thread):
 							if "QUIT" in reply:
 								#Update available ID list
 								#If there is room then assign an ID
-								print available[playerID - 1]
+								#print available[playerID - 1]
 								if available[playerID - 1] == False:
 									available[playerID - 1] = True
 								#Remove from active list
@@ -322,6 +326,9 @@ class ClientThread(threading.Thread):
 								cursor.execute(update_stmt, (user, pw, ))
 								print "Removed session key data"
 								db.commit()
+								update_stmt = ("UPDATE users SET Player_ID = 0 where username = %s and password = %s")
+								cursor.execute(update_stmt, (user, pw, ))
+								db.commit()
 								db.close()
 				
 								#End Thread
@@ -332,7 +339,7 @@ class ClientThread(threading.Thread):
 							else:
 								print reply
 								num_players = num_players +1
-								print num_players
+								print "Number of players = " + str(num_players)
 							
 							#Wait for minimum number of players
 							###################################
@@ -343,6 +350,7 @@ class ClientThread(threading.Thread):
 								ciphertext = aes.encrypt(waiting)
 								self.c.send(ciphertext)
 								time.sleep(1)
+							barrier0 = Barrier(num_players)
 							
 							#Minimum players ready
 							print "DEALING"
@@ -354,9 +362,11 @@ class ClientThread(threading.Thread):
 							time.sleep(1)
 
 							
-
-							
-							game = Poker(num_clients)
+							#Generate game
+							#Shuffle deck
+							game = Poker(num_players)
+							#Barrier prevents changes in the deck
+							barrier0.wait()
 
 							#Generate initial pot
 							pot = pot + 10
@@ -409,6 +419,7 @@ class ClientThread(threading.Thread):
 								hand += '~' * (16 - len(hand) % 16)
 							ciphertext = aes.encrypt(hand)
 							self.c.send(ciphertext)
+							time.sleep(1)
 
 							#Betting
 							bet = 0
@@ -417,31 +428,33 @@ class ClientThread(threading.Thread):
 							
 							#Betting while loop
 							while True:
-								barrier1 = Barrier(num_clients)
-								barrier2 = Barrier(num_clients)
-								#Final barrier to update pot
-								barrier3 = Barrier(num_clients)
-								print "Make barriers"
+								barrier1 = Barrier(num_players)
+								barrier2 = Barrier(num_players)
+								#Barrier to update pot
+								barrier3 = Barrier(num_players)
+								barrier4 = Barrier(num_players)
+								#Final Barrier
+								barrier5 = Barrier(num_players)
+								#print "Make barriers"
 
 								turn = 1
 								check = True
-								print "playerID"
-								print playerID
-								print "active array size"
-								print range(len(active))
+								print "playerID " + str(playerID)
+								#print "active array size"
+								#print range(len(active))
 								#Loop through list of active players
 								for index in range(len(active)):
 									#Go through the list of active players
 									#print "Index is " + str(index)
 									if active[index] != 0:
 										#Determine which player get the turn
-										print "looping"
-										print turn
+										#print "looping"
+										#print turn
 										#If not your turn then wait
 										while turn != self.tID:
 											time.sleep(5)
 											#If your turn is over, then wait until all players turn											#is over
-											if turn > num_clients:
+											if turn > num_players:
 												break
 										#Player whose turn it is, bets
 										if playerID == turn:
@@ -539,7 +552,7 @@ class ClientThread(threading.Thread):
 								#check = True
 								loop = 1
 								#print "playerID"
-								print playerID
+								#print playerID
 								#Check bet vs current_bet
 								if bet != current_bet:
 									check = False
@@ -577,10 +590,14 @@ class ClientThread(threading.Thread):
 							barrier3.wait()
 							#Calculate round winner
 							#if self.tID == 1:
-							maxpoint = max(game.tlist)
+							maxindex = 0
+							maxpoint = min(game.tlist)
 							maxindex = game.tlist.index(maxpoint)
 							maxindex = maxindex + 1
 							print('\nHand %d wins' % (maxindex))
+							#print maxpoint
+							#print maxindex
+							barrier4.wait()
 							
 							print "Pot is: " + str(pot)
 							#Disperse winnings
@@ -608,6 +625,7 @@ class ClientThread(threading.Thread):
 								update_stmt = ("UPDATE users SET Money = %s where username = %s and password = %s")
 								cursor.execute(update_stmt, (str(money), user, pw, ))
 								db.commit()
+							barrier5.wait()
 							num_players = 0
 
 							
@@ -848,10 +866,10 @@ class Poker(object):
     	def isRoyal(self, hand):  # returns the total_point and prints out 'Royal Flush' if true, if false, pass down to isStraightFlush(hand)
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 10
+		h = 10000
 		Cursuit = sortedHand[0].suit
 		Currank = 14
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		for card in sortedHand:
 	    		if card.suit != Cursuit or card.rank != Currank:
 		        	flag = False
@@ -867,10 +885,10 @@ class Poker(object):
     	def isStraightFlush(self, hand):  # returns the total_point and prints out 'Straight Flush' if true, if false, pass down to isFour(hand)
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 9
+		h = 9000
 		Cursuit = sortedHand[0].suit
 		Currank = sortedHand[0].rank
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		for card in sortedHand:
 		    	if card.suit != Cursuit or card.rank != Currank:
 		        	flag = False
@@ -886,10 +904,10 @@ class Poker(object):
     	def isFour(self, hand):  # returns the total_point and prints out 'Four of a Kind' if true, if false, pass down to isFull()
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 8
+		h = 8000
 		Currank = sortedHand[1].rank  # since it has 4 identical ranks,the 2nd one in the sorted listmust be the identical rank
 		count = 0
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		for card in sortedHand:
 		    	if card.rank == Currank:
 		        	count += 1
@@ -903,8 +921,8 @@ class Poker(object):
     	def isFull(self, hand):  # returns the total_point and prints out 'Full House' if true, if false, pass down to isFlush()
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 7
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 7000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		mylist = []  # create a list to store ranks
 		for card in sortedHand:
 		    	mylist.append(card.rank)
@@ -923,8 +941,8 @@ class Poker(object):
     	def isFlush(self, hand):  # returns the total_point and prints out 'Flush' if true, if false, pass down to isStraight()
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 6
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 6000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		Cursuit = sortedHand[0].suit
 		for card in sortedHand:
 		    	if not (card.suit == Cursuit):
@@ -939,8 +957,8 @@ class Poker(object):
     	def isStraight(self, hand):
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 5
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 5000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		Currank = sortedHand[0].rank  # this should be the highest rank
 		for card in sortedHand:
 		    	if card.rank != Currank:
@@ -957,8 +975,8 @@ class Poker(object):
     	def isThree(self, hand):
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 4
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 4000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		Currank = sortedHand[2].rank  # In a sorted rank, the middle one should have 3 counts if flag=True
 		mylist = []
 		for card in sortedHand:
@@ -974,8 +992,8 @@ class Poker(object):
     	def isTwo(self, hand):  # returns the total_point and prints out 'Two Pair' if true, if false, pass down to isOne()
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 3
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 3000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		rank1 = sortedHand[1].rank  # in a five cards sorted group, if isTwo(), the 2nd and 4th card should have another identical rank
 		rank2 = sortedHand[3].rank
 		mylist = []
@@ -994,8 +1012,8 @@ class Poker(object):
 		# returns the total_point and prints out 'One Pair' if true, if false, pass down to isHigh()
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 2
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 2000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		mylist = []  # create an empty list to store ranks
 		mycount = []  # create an empty list to store number of count of each rank
 		for card in sortedHand:
@@ -1015,8 +1033,8 @@ class Poker(object):
 		# returns the total_point and prints out 'High Card'
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 1
-		total_point = h * 13 ** 5 + self.point(sortedHand)
+		h = 1000
+		total_point = h * 130 ** 5 + self.point(sortedHand)
 		mylist = []  # create a list to store ranks
 		for card in sortedHand:
 		    	mylist.append(card.rank)
