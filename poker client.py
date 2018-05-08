@@ -37,7 +37,6 @@ server_public_key = RSA.importKey(server_string)
 random_generator = Random.new().read
 client_private_key = RSA.generate(1024, random_generator)
 client_public_key = client_private_key.publickey()
-#print client_public_key.exportKey()
 
 #Server's response if too many clients
 server_response = server.recv(1024)
@@ -53,6 +52,7 @@ if server_response == "Too many clients":
 #Otherwise, send client's public key for asymmetric encryption
 elif server_response == "Request Public Key":
 	server.sendall("public_key=" + client_public_key.exportKey() + "\n")
+	#print client_public_key.exportKey()
 
 	#Login to obtain public key
 	username = raw_input("Username: ")
@@ -85,7 +85,7 @@ elif server_response == "Request Public Key":
 	if "Request Session Key" in decrypted:
 		#Generate AES key and information
 		AES_key = Crypto.Random.OSRNG.posix.new().read(AES.block_size)
-		#print key
+		#print AES_key
 		#Generate initialization vector
 		IV = ''.join(chr(random.randint(0, 0xFF)) for i in range(16))
 		#print IV
@@ -144,9 +144,6 @@ elif server_response == "Request Public Key":
 			signal = aes.decrypt(server_response)
 			print signal
 			time.sleep(1)
-		
-		
-			
 
 		#Receive a hand of cards
 		server_response = server.recv(1024)

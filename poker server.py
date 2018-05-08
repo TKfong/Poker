@@ -84,7 +84,8 @@ class ClientThread(threading.Thread):
 			global public_key1
 			#Send out public key
 			self.c.send("public_key=" + public_key1.exportKey() + "\n")
-			print "Public key sent to account maker."
+			#print public_key1.exportKey()
+			print "Public key sent to poker client."
 			#Update number of clients
 			global num_clients 
 			num_clients = num_clients + 1
@@ -154,6 +155,8 @@ class ClientThread(threading.Thread):
 					#Obtain username and password
 					user = data[0]
 					pw = data[1]
+					#print "Decrypted username: " + user
+					#print "Decrypted password: " + pw
 					#Check if username and password exist on database
 					check_stmt = ("SELECT * FROM users WHERE username = %s and password = %s")
 					cursor.execute(check_stmt, (user, pw, ))				
@@ -200,7 +203,7 @@ class ClientThread(threading.Thread):
 						IV = data[1]
 
 
-						#print "key: " + sess_key
+						#print "AES key: " + sess_key
 						#print "IV: " + IV
 
 
@@ -376,9 +379,9 @@ class ClientThread(threading.Thread):
 							print "RESULTS: "
 							for row in results:
 								money = row[5]
-							print "Initial: " + str(money)
+							#print "Initial: " + str(money)
 							money = money - 10
-							print "After buy-in: " + str(money)
+							print "Player " + str(playerID) + "'s money after buy-in: " + str(money)
 
 							print "POT: " + str(pot)
 						
@@ -439,7 +442,7 @@ class ClientThread(threading.Thread):
 
 								turn = 1
 								check = True
-								print "playerID " + str(playerID)
+								#print "playerID " + str(playerID)
 								#print "active array size"
 								#print range(len(active))
 								#Loop through list of active players
@@ -451,7 +454,7 @@ class ClientThread(threading.Thread):
 										#print "looping"
 										#print turn
 										#If not your turn then wait
-										while turn != self.tID:
+										while turn != playerID:
 											time.sleep(5)
 											#If your turn is over, then wait until all players turn											#is over
 											if turn > num_players:
@@ -497,8 +500,9 @@ class ClientThread(threading.Thread):
 											verifier = PKCS1_v1_5.new(client_key)
 											verified = verifier.verify(digest, sig)
 											#assert verified, "Signature verification failed"
+											print "Verified"
 											print verified
-											if verified == False:
+											if verified:
 												#Resending request for bet
 												msg = "Resend please"
 												if len(msg) % 16 != 0:
@@ -521,6 +525,7 @@ class ClientThread(threading.Thread):
 												verified = verifier.verify(digest, sig)
 											else: 
 												#Resending request for bet
+												print "Verified"
 												msg = "No problem"
 												if len(msg) % 16 != 0:
 													msg += '~' * (16 - len(msg) % 16)
