@@ -6,8 +6,8 @@ import hashlib
 
 #Declare server's attributes
 server = socket.socket()
-host = "10.0.2.15"
-#host = "127.0.1.1"
+#host = "10.0.2.15"
+host = "127.0.0.1"
 port = 7777
 #Connect to server
 server.connect((host, port))

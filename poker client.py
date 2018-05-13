@@ -154,72 +154,123 @@ elif server_response == "Request Public Key":
 		#Betting
 		#Receive own money situation
 		while True:
-			#money = 0
-			current_bet = 0
-			bet = 0
-			#Receive Money info
+			#Bet Turn/Betting phase
 			server_response = server.recv(1024)
 			msg = aes.decrypt(server_response)
 			msg = msg.replace("~", '')
 			msg = msg.replace("\r\n", '')
-			print "Make a bet. Your money: " + msg
-			money = int(msg)
-			#Receive Pot info
-			server_response = server.recv(1024)
-			msg = aes.decrypt(server_response)
-			msg = msg.replace("~", '')
-			print "Pot: " + msg
-			#Receive current bet value
-			server_response = server.recv(1024)
-			msg = aes.decrypt(server_response)
-			msg = msg.replace("~", '')
-			msg = msg.replace("\r\n", '')
-			print "Current_bet: " + msg
-			current_bet = int(msg)
-			#Input bet amount
-			bet = raw_input("bet amount: ")
-			type(bet)
-			#Bet has to be great than or equal to the current bet
-			#Bet has to be less or equal to your current money
-			while(int(bet) < current_bet or int(bet) > money):
-				bet = raw_input("bet amount: ")
-				type(bet)
-			#Round numbers if jerks type float values
-			bet = int(bet)
-			bet = str(bet)
+			if "Betting" in msg:
+				#money = 0
+				choose = ""
+				current_bet = 0
+				bet = 0
+				#Receive Money info
+				server_response = server.recv(1024)
+				msg = aes.decrypt(server_response)
+				msg = msg.replace("~", '')
+				msg = msg.replace("\r\n", '')
+				print "Make a bet. Your money: " + msg
+				money = int(msg)
+				#Receive Pot info
+				server_response = server.recv(1024)
+				msg = aes.decrypt(server_response)
+				msg = msg.replace("~", '')
+				print "Pot: " + msg
+				#Receive current bet value
+				server_response = server.recv(1024)
+				msg = aes.decrypt(server_response)
+				msg = msg.replace("~", '')
+				msg = msg.replace("\r\n", '')
+				print "Current_bet: " + msg
+				current_bet = int(msg)
+				print 
+				#Choose
+				choose = raw_input("type BET or FOLD: ")
+				type(choose)
+				while choose != "BET" and choose != "FOLD":
+					#print "type READY or QUIT"
+					choose = raw_input("type BET or FOLD: ")
+					type(choose)
+
+				if choose == "FOLD":
+					#Hash the fold
+					digest = SHA256.new()
+					digest.update(choose)
+					#Load private key and sign message
+					signer = PKCS1_v1_5.new(client_private_key)
+					sig = signer.sign(digest)
+					#Sign the fold with RSA private key
+					signed_fold = choose + "!@#$%^&*()" + sig
+					#Encrypt with AES and send to server
+					if len(signed_fold) % 16 != 0:
+						signed_fold += '~' * (16 - len(signed_fold) % 16)
+					ciphertext = aes.encrypt(signed_fold)
+					server.sendall(ciphertext)
+				elif choose == "BET":
+					#Input bet amount
+					bet = raw_input("bet amount: ")
+					type(bet)
+					#Bet has to be great than or equal to the current bet
+					#Bet has to be less or equal to your current money
+					while(int(bet) < current_bet or int(bet) > money):
+						bet = raw_input("bet amount: ")
+						type(bet)
+					#Round numbers if jerks type float values
+					bet = int(bet)
+					bet = str(bet)
 		
-			#Hash the bet
-			digest = SHA256.new()
-			digest.update(bet)
-			#Load private key and sign message
-			signer = PKCS1_v1_5.new(client_private_key)
-			sig = signer.sign(digest)
-			#Sign the bet with RSA private key
-			signed_bet = bet + "!@#$%^&*()" + sig
-			#Encrypt with AES and send to server
-			if len(signed_bet) % 16 != 0:
-				signed_bet += '~' * (16 - len(signed_bet) % 16)
-			ciphertext = aes.encrypt(signed_bet)
-			server.sendall(ciphertext)
+					#Hash the bet
+					digest = SHA256.new()
+					digest.update(bet)
+					#Load private key and sign message
+					signer = PKCS1_v1_5.new(client_private_key)
+					sig = signer.sign(digest)
+					#Sign the bet with RSA private key
+					signed_bet = bet + "!@#$%^&*()" + sig
+					#Encrypt with AES and send to server
+					if len(signed_bet) % 16 != 0:
+						signed_bet += '~' * (16 - len(signed_bet) % 16)
+					ciphertext = aes.encrypt(signed_bet)
+					server.sendall(ciphertext)
+			else:
+				#print "You folded"
+				print msg
 		
 			#Receive verification response
 			server_response = server.recv(1024)
 			msg = aes.decrypt(server_response)
 			msg = msg.replace("~", '')
+
 			if "Resend" in msg:
-				#Hash the bet
-				digest = SHA256.new()
-				digest.update(bet)
-				#Load private key and sign message
-				signer = PKCS1_v1_5.new(client_private_key)
-				sig = signer.sign(digest)
-				#Sign the bet with RSA private key
-				signed_bet = bet + "!@#$%^&*()" + sig
-				#Encrypt with AES and send to server
-				if len(signed_bet) % 16 != 0:
-					signed_bet += '~' * (16 - len(signed_bet) % 16)
-				ciphertext = aes.encrypt(signed_bet)
-				server.sendall(ciphertext)
+				print "Resending"
+				if choose == "FOLD":
+					#Hash the fold
+					digest = SHA256.new()
+					digest.update(choose)
+					#Load private key and sign message
+					signer = PKCS1_v1_5.new(client_private_key)
+					sig = signer.sign(digest)
+					#Sign the fold with RSA private key
+					signed_fold = choose + "!@#$%^&*()" + sig
+					#Encrypt with AES and send to server
+					if len(signed_fold) % 16 != 0:
+						signed_fold += '~' * (16 - len(signed_fold) % 16)
+					ciphertext = aes.encrypt(signed_fold)
+					server.sendall(ciphertext)
+				else:
+					#Hash the bet
+					digest = SHA256.new()
+					digest.update(bet)
+					#Load private key and sign message
+					signer = PKCS1_v1_5.new(client_private_key)
+					sig = signer.sign(digest)
+					#Sign the bet with RSA private key
+					signed_bet = bet + "!@#$%^&*()" + sig
+					#Encrypt with AES and send to server
+					if len(signed_bet) % 16 != 0:
+						signed_bet += '~' * (16 - len(signed_bet) % 16)
+					ciphertext = aes.encrypt(signed_bet)
+					server.sendall(ciphertext)
 			else:
 				#Should print No problem
 				print msg
@@ -238,6 +289,12 @@ elif server_response == "Request Public Key":
 		result = aes.decrypt(server_response)
 		result = result.replace("~", '')
 		print result
+		if "LOSE" in result:
+			print "Winner Hand"
+			server_response = server.recv(1024)
+			winning_hand = aes.decrypt(server_response)
+			winning_hand = winning_hand.replace("~", '')
+			print winning_hand
 	#print server_response
 	#while True:
 		#break

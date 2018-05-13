@@ -31,6 +31,7 @@ current_bet = 0
 flags = [0, 0, 0, 0, 0]
 check = True
 num_players = 0
+running = False
 
 #Generate private and public keys
 #Keys for making accounts
@@ -287,6 +288,7 @@ class ClientThread(threading.Thread):
 							global maxindex
 							global check
 							global num_players
+							global running
 							#Initialize several variables for each round of poker
 							hand = ''
 							current_bet = 0
@@ -341,18 +343,23 @@ class ClientThread(threading.Thread):
 								sys.exit()
 							else:
 								print reply
-								num_players = num_players +1
+								while (running == True):
+										time.sleep(5)
+								num_players = num_players + 1
 								print "Number of players = " + str(num_players)
 							
 							#Wait for minimum number of players
+							#Wait for players in queue too
 							###################################
-							while (num_players < 2):
+							while (num_players < 2 or num_players < num_clients):
 								waiting = "WAITING"
 								if len(waiting) % 16 != 0:
 									waiting += '~' * (16 - len(waiting) % 16)
 								ciphertext = aes.encrypt(waiting)
 								self.c.send(ciphertext)
 								time.sleep(1)
+								print "players " + str(num_players)
+								print "clients " + str(num_clients)
 							barrier0 = Barrier(num_players)
 							
 							#Minimum players ready
@@ -363,13 +370,14 @@ class ClientThread(threading.Thread):
 							ciphertext = aes.encrypt(deal)
 							self.c.send(ciphertext)
 							time.sleep(1)
-
 							
 							#Generate game
 							#Shuffle deck
 							game = Poker(num_players)
 							#Barrier prevents changes in the deck
 							barrier0.wait()
+							#Boolean value for game is currently running
+							running = True
 
 							#Generate initial pot
 							pot = pot + 10
@@ -387,6 +395,7 @@ class ClientThread(threading.Thread):
 						
 							#Deal cards
 ########################################################
+							#Get hands for each player
 							Hand = game.hands[playerID - 1]
 							#for i in range(len(Hand)):
 							sortedHand = sorted(Hand, reverse = True)
@@ -428,7 +437,8 @@ class ClientThread(threading.Thread):
 							bet = 0
 							#global current_bet
 							#global index
-							
+							fold = False
+
 							#Betting while loop
 							while True:
 								barrier1 = Barrier(num_players)
@@ -440,8 +450,10 @@ class ClientThread(threading.Thread):
 								barrier5 = Barrier(num_players)
 								#print "Make barriers"
 
+								#Initialize/reset value for rebet
 								turn = 1
 								check = True
+								
 								#print "playerID " + str(playerID)
 								#print "active array size"
 								#print range(len(active))
@@ -461,55 +473,38 @@ class ClientThread(threading.Thread):
 												break
 										#Player whose turn it is, bets
 										if playerID == turn:
-											print "sending bet messages"
-											#Send player's money info
-											msg = str(money)
-											if len(msg) % 16 != 0:
-												msg += '~' * (16 - len(msg) % 16)
-											ciphertext = aes.encrypt(msg)
-											self.c.send(ciphertext)
-											time.sleep(1)
-											#Send pot info to player
-											msg = str(pot)
-											if len(msg) % 16 != 0:
-												msg += '~' * (16 - len(msg) % 16)
-											ciphertext = aes.encrypt(msg)
-											self.c.send(ciphertext)
-											time.sleep(1)
-											#Send current bet
-											print "Sending current bet"
-											msg = str(current_bet)
-											if len(msg) % 16 != 0:
-												msg += '~' * (16 - len(msg) % 16)
-											ciphertext = aes.encrypt(msg)
-											self.c.send(ciphertext)
-											time.sleep(1)
-											#Receive bet
-											print "Receiving bet"
-											data = self.c.recv(1024)
-											signed_bet = aes.decrypt(data)
-											signed_bet = signed_bet.replace("~", '')
-											#Player's bet and signature
-											data = signed_bet.split("!@#$%^&*()")
-											bet = data[0]
-											sig = data[1]
-											#Hash bet for verification
-											digest = SHA256.new()
-											digest.update(bet)
-											#Load public key and verify message
-											verifier = PKCS1_v1_5.new(client_key)
-											verified = verifier.verify(digest, sig)
-											#assert verified, "Signature verification failed"
-											print "Verified"
-											print verified
-											if verified:
-												#Resending request for bet
-												msg = "Resend please"
+											if fold == False:
+												msg = "Start Betting phase"
 												if len(msg) % 16 != 0:
 													msg += '~' * (16 - len(msg) % 16)
 												ciphertext = aes.encrypt(msg)
 												self.c.send(ciphertext)
-												#Receive player bet
+												time.sleep(1)
+												print "sending bet messages"
+												#Send player's money info
+												msg = str(money)
+												if len(msg) % 16 != 0:
+													msg += '~' * (16 - len(msg) % 16)
+												ciphertext = aes.encrypt(msg)
+												self.c.send(ciphertext)
+												time.sleep(1)
+												#Send pot info to player
+												msg = str(pot)
+												if len(msg) % 16 != 0:
+													msg += '~' * (16 - len(msg) % 16)
+												ciphertext = aes.encrypt(msg)
+												self.c.send(ciphertext)
+												time.sleep(1)
+												#Send current bet
+												print "Sending current bet"
+												msg = str(current_bet)
+												if len(msg) % 16 != 0:
+													msg += '~' * (16 - len(msg) % 16)
+												ciphertext = aes.encrypt(msg)
+												self.c.send(ciphertext)
+												time.sleep(1)
+												#Receive bet
+												print "Receiving bet"
 												data = self.c.recv(1024)
 												signed_bet = aes.decrypt(data)
 												signed_bet = signed_bet.replace("~", '')
@@ -517,32 +512,81 @@ class ClientThread(threading.Thread):
 												data = signed_bet.split("!@#$%^&*()")
 												bet = data[0]
 												sig = data[1]
+												if bet == "FOLD":
+													fold = True
 												#Hash bet for verification
 												digest = SHA256.new()
 												digest.update(bet)
 												#Load public key and verify message
 												verifier = PKCS1_v1_5.new(client_key)
 												verified = verifier.verify(digest, sig)
-											else: 
-												#Resending request for bet
-												print "Verified"
+												#assert verified, "Signature verification failed"
+												print "Verify value"
+												print verified
+												if verified == False:
+													#Resending request for bet
+													print "Resend bet"
+													msg = "Resend please"
+													if len(msg) % 16 != 0:
+														msg += '~' * (16 - len(msg) % 16)
+													ciphertext = aes.encrypt(msg)
+													self.c.send(ciphertext)
+													#Receive player bet
+													data = self.c.recv(1024)
+													signed_bet = aes.decrypt(data)
+													signed_bet = signed_bet.replace("~", '')
+													#Player's bet and signature
+													data = signed_bet.split("!@#$%^&*()")
+													bet = data[0]
+													sig = data[1]
+													if bet == "FOLD":
+														fold = True
+													#Hash bet for verification
+													digest = SHA256.new()
+													digest.update(bet)
+													#Load public key and verify message
+													verifier = PKCS1_v1_5.new(client_key)
+													verified = verifier.verify(digest, sig)
+												else: 
+													#Confirmed no problem with bet verification
+													print "Verified"
+													msg = "No problem"
+													if len(msg) % 16 != 0:
+														msg += '~' * (16 - len(msg) % 16)
+													ciphertext = aes.encrypt(msg)
+													self.c.send(ciphertext)
+													print "Successfully verified message"
+													time.sleep(1)
+											else:
+												print "Player " + str(playerID) + " folded"
+												#Send fold message
+												msg = "You folded"
+												if len(msg) % 16 != 0:
+													msg += '~' * (16 - len(msg) % 16)
+												ciphertext = aes.encrypt(msg)
+												self.c.send(ciphertext)
+												time.sleep(1)
+												#No need for bet verification because already folded
+												print "Folded"
 												msg = "No problem"
 												if len(msg) % 16 != 0:
 													msg += '~' * (16 - len(msg) % 16)
 												ciphertext = aes.encrypt(msg)
 												self.c.send(ciphertext)
-												print "Successfully verified message"
 												time.sleep(1)
+
+
 										
 											print "Player " + str(playerID) + " bet " + str(bet)
 											#Increment turn to next player
 											print "Next turn"
 											turn = turn + 1
-											bet = int(bet)
-											if bet >= current_bet:
-												current_bet = bet
-											else:
-												print "Mistake"
+											if fold == False:
+												bet = int(bet)
+												if bet >= current_bet:
+													current_bet = bet
+												else:
+													print "Mistake"
 										#Other players wait
 										else:
 											msg = "Wait your turn"
@@ -559,7 +603,7 @@ class ClientThread(threading.Thread):
 								#print "playerID"
 								#print playerID
 								#Check bet vs current_bet
-								if bet != current_bet:
+								if bet != current_bet and fold == False:
 									check = False
 									print "no good"
 								barrier2.wait()
@@ -586,17 +630,22 @@ class ClientThread(threading.Thread):
 							#print "Current bet: " + str(current_bet)
 							#print "turn " + str(turn)
 
-							
-							#Update pot
-							pot = pot + current_bet
-							#Update money
-							money = money - current_bet
+							#Update pot and money
+							if fold == False:
+								pot = pot + current_bet
+								money = money - current_bet
+								#print playerID
+								#print game.tlist[playerID - 1]
+							else:
+								#print game.tlist[playerID - 1]
+								game.tlist[playerID - 1] = 0
+								#print game.tlist[playerID - 1]
 							
 							barrier3.wait()
 							#Calculate round winner
 							#if self.tID == 1:
 							maxindex = 0
-							maxpoint = min(game.tlist)
+							maxpoint = max(game.tlist)
 							maxindex = game.tlist.index(maxpoint)
 							maxindex = maxindex + 1
 							print('\nHand %d wins' % (maxindex))
@@ -630,8 +679,26 @@ class ClientThread(threading.Thread):
 								update_stmt = ("UPDATE users SET Money = %s where username = %s and password = %s")
 								cursor.execute(update_stmt, (str(money), user, pw, ))
 								db.commit()
+								#Send winning hand data to losers
+								winning_hand = ''
+								hand1 = ''
+	#							Hand1 = game.hands[0]
+	#							sortedHand1 = sorted(Hand1, reverse = True)
+	#							for card in sortedHand1:
+	#								hand1 = hand1 + str(card) + ' '
+								Handwin = game.hands[maxindex - 1]
+								sortedWin = sorted(Handwin, reverse = True)
+								for card in sortedWin:
+									winning_hand = winning_hand + str(card) + ' '
+								if len(winning_hand) % 16 != 0:
+									winning_hand += '~' * (16 - len(winning_hand) % 16)
+								ciphertext = aes.encrypt(winning_hand)
+								self.c.send(ciphertext)
+
+							#Wait for threads to finish sending results
 							barrier5.wait()
 							num_players = 0
+							running = False
 
 							
 ###############################################################################
@@ -1038,7 +1105,7 @@ class Poker(object):
 		# returns the total_point and prints out 'High Card'
 		sortedHand = sorted(hand, reverse=True)
 		flag = True
-		h = 1000
+		h = 100
 		total_point = h * 130 ** 5 + self.point(sortedHand)
 		mylist = []  # create a list to store ranks
 		for card in sortedHand:
